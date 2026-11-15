@@ -477,6 +477,9 @@ uint32_t gSuitSkinId = 0;
 static uint32_t (*fn_GetBaseWeaponID)(uint32_t weaponID) = nullptr;
 static void* (*fn_GetConceptList)(uint32_t baseWeaponId) = nullptr;
 static void* (*fn_GetCamosByConcept)(uint32_t conceptId) = nullptr;
+static void* (*fn_CurrentWeapon)() = nullptr;
+static int (*fn_GetItemID)(void* weapon) = nullptr;
+static void* (*fn_GetWeaponConf)(uint32_t weaponId) = nullptr;
 
 static bool SkinSwapOn() {
     return checkboxStates["SKINSWAP"];
@@ -630,6 +633,9 @@ static void hooking() {
     fn_GetBaseWeaponID = (uint32_t (*)(uint32_t))(libunity_base + GET_OFF("0x5A4C18C"));
     fn_GetConceptList = (void* (*)(uint32_t))(libunity_base + GET_OFF("0x85D45CC"));
     fn_GetCamosByConcept = (void* (*)(uint32_t))(libunity_base + GET_OFF("0x85D4C74"));
+    fn_CurrentWeapon = (void* (*)())(libunity_base + GET_OFF("0x80167E8"));
+    fn_GetItemID = (int (*)(void*))(libunity_base + GET_OFF("0xC0D0088"));
+    fn_GetWeaponConf = (void* (*)(uint32_t))(libunity_base + GET_OFF("0xD90B7BC"));
 
 BYPASS("0x204218"); 
 BYPASS("0x45B334");  

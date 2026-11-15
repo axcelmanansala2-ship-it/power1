@@ -119,41 +119,66 @@ static void* SkinListAt(void* list, int i) {
 
 static int gHeldWeaponId = 0;
 static uint32_t gHeldBaseId = 0;
-static uint32_t gHeldQueryBase = 0;
 static uint32_t gHeldSkinId = 0;
+static int gHeldDefaultSkin = 0;
+static void* gHeldConf = nullptr;
+static int gHeldQueryWeapon = -1;
+static int gSkinRetry = 0;
 static uint32_t gHeldSkinChoices[48];
 static int gHeldSkinCount = 0;
 
 static void RefreshHeldWeaponSkins() {
-    gHeldWeaponId = 0;
-    gHeldSkinId = 0;
+    void* weapon = nullptr;
     auto local = FastFuncs::Gameplay_get_LocalPawn_Fast;
     auto weaponFn = FastFuncs::Pawn_get_CurrentWeapon_Fast;
-    if (!local || !weaponFn) return;
-    Pawn* pawn = local();
-    if (!SkinPtrOk(pawn)) return;
-    void* weapon = weaponFn(pawn);
-    if (!SkinPtrOk(weapon)) return;
+    if (local && weaponFn) {
+        Pawn* pawn = local();
+        if (SkinPtrOk(pawn)) {
+            void* held = weaponFn(pawn);
+            if (SkinPtrOk(held)) weapon = held;
+        }
+    }
+    if (!weapon && fn_CurrentWeapon) {
+        void* held = fn_CurrentWeapon();
+        if (SkinPtrOk(held)) weapon = held;
+    }
+    if (!weapon || !fn_GetItemID) return;
 
-    int itemId = *reinterpret_cast<int*>((uintptr_t)weapon + 0x74);
+    int itemId = fn_GetItemID(weapon);
     if (itemId <= 0) return;
     gHeldWeaponId = itemId;
+    if (orig_Weapon_get_CurSkinID) gHeldSkinId = orig_Weapon_get_CurSkinID(weapon);
 
-    void* info = *reinterpret_cast<void**>((uintptr_t)weapon + 0x98);
-    if (SkinPtrOk(info)) gHeldSkinId = *reinterpret_cast<uint32_t*>((uintptr_t)info + 0x34);
+    bool rebuild = itemId != gHeldQueryWeapon || gHeldConf == nullptr;
+    if (!rebuild && gHeldSkinCount == 0) {
+        if (++gSkinRetry < 45) return;
+        gSkinRetry = 0;
+        rebuild = true;
+    }
+    if (!rebuild) return;
+    gSkinRetry = 0;
+    gHeldQueryWeapon = itemId;
+    gHeldSkinCount = 0;
+    gHeldConf = nullptr;
+    gHeldDefaultSkin = 0;
+    gHeldBaseId = (uint32_t)itemId;
 
-    uint32_t baseId = (uint32_t)itemId;
+    if (fn_GetWeaponConf) {
+        void* conf = fn_GetWeaponConf((uint32_t)itemId);
+        if (SkinPtrOk(conf)) {
+            gHeldConf = conf;
+            uint32_t base = *reinterpret_cast<uint32_t*>((uintptr_t)conf + 0x34);
+            gHeldDefaultSkin = *reinterpret_cast<int*>((uintptr_t)conf + 0x38);
+            if (base != 0) gHeldBaseId = base;
+        }
+    }
     if (fn_GetBaseWeaponID) {
         uint32_t resolved = fn_GetBaseWeaponID((uint32_t)itemId);
-        if (resolved != 0) baseId = resolved;
+        if (resolved != 0) gHeldBaseId = resolved;
     }
-    gHeldBaseId = baseId;
-    if (baseId == gHeldQueryBase) return;
-    gHeldQueryBase = baseId;
-    gHeldSkinCount = 0;
     if (!fn_GetConceptList || !fn_GetCamosByConcept) return;
 
-    void* concepts = fn_GetConceptList(baseId);
+    void* concepts = fn_GetConceptList(gHeldBaseId);
     int conceptCount = SkinListCount(concepts);
     for (int c = 0; c < conceptCount && gHeldSkinCount < 48; ++c) {
         void* concept = SkinListAt(concepts, c);
@@ -625,20 +650,27 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 ImGui::BeginGroupPanel("Skin ID", ImVec2(-1, 0));
                 RefreshHeldWeaponSkins();
                 g_widgets.checkbox("Swap default skin", &checkboxStates["SKINSWAP"]);
-                ImGui::Text("Weapon %d   base %u   equipped %u", gHeldWeaponId, gHeldBaseId, gHeldSkinId);
-                ImGui::Text("Default becomes %u", gWeaponSkinId);
-                ImGui::BeginChild("##HeldSkins", ImVec2(0, 140), true);
-                if (gHeldWeaponId == 0) {
+                ImGui::BeginChild("##HeldSkins", ImVec2(0, 180), true);
+                if (gHeldWeaponId <= 0) {
                     ImGui::TextUnformatted("Hold a weapon");
-                } else if (gHeldSkinCount == 0) {
-                    ImGui::TextUnformatted("No skins for this weapon");
                 } else {
-                    for (int i = 0; i < gHeldSkinCount; ++i) {
-                        char label[32];
-                        snprintf(label, sizeof(label), "%u", gHeldSkinChoices[i]);
-                        if (ImGui::Selectable(label, gWeaponSkinId == gHeldSkinChoices[i])) {
-                            gWeaponSkinId = gHeldSkinChoices[i];
-                            checkboxStates["SKINSWAP"] = true;
+                    ImGui::Text("Weapon %d", gHeldWeaponId);
+                    ImGui::Text("Skin %u", gHeldSkinId);
+                    ImGui::Text("Default %d", gHeldDefaultSkin);
+                    if (gHeldSkinCount == 0) {
+                        ImGui::TextUnformatted("No skins for this weapon");
+                    } else {
+                        for (int i = 0; i < gHeldSkinCount; ++i) {
+                            char label[32];
+                            snprintf(label, sizeof(label), "%u", gHeldSkinChoices[i]);
+                            if (ImGui::Selectable(label, gWeaponSkinId == gHeldSkinChoices[i])) {
+                                gWeaponSkinId = gHeldSkinChoices[i];
+                                gHeldDefaultSkin = (int)gWeaponSkinId;
+                                checkboxStates["SKINSWAP"] = true;
+                                if (SkinPtrOk(gHeldConf)) {
+                                    *reinterpret_cast<int*>((uintptr_t)gHeldConf + 0x38) = gHeldDefaultSkin;
+                                }
+                            }
                         }
                     }
                 }
