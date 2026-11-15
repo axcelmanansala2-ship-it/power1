@@ -15,6 +15,10 @@
 #include <dlfcn.h>
 #include "dobby/dobby.h"
 
+static constexpr bool kCallMonitor =
+#include "../on/off"
+;
+
 typedef unsigned long long ulong;
 
 uintptr_t get_off(const char* str) {
@@ -824,6 +828,7 @@ static void AnogsScanStacks() {
 }
 
 static bool AnogsMonitorOn() {
+    if (!kCallMonitor) return false;
     return checkboxStates["ANOGS::MONITOR"];
 }
 
@@ -863,14 +868,10 @@ static void AnogsWatch() {
     }
 }
 
-static int hook_anogs_0() { AnogsOnCall(libanogs_base + 0x204218, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-static int hook_anogs_1() { AnogsOnCall(libanogs_base + 0x45B334, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-static int hook_anogs_2() { AnogsOnCall(libanogs_base + 0x44A714, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-static int hook_anogs_3() { AnogsOnCall(libanogs_base + 0x48F964, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-//static int hook_anogs_4() { AnogsOnCall(libanogs_base + 0x2F7DA4, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-//static int hook_anogs_5() { AnogsOnCall(libanogs_base + 0x446140, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-//static int hook_anogs_6() { AnogsOnCall(libanogs_base + 0x42560C, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-//static int hook_anogs_7() { AnogsOnCall(libanogs_base + 0x359100, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+static int hook_anogs_0() { if constexpr (kCallMonitor) AnogsOnCall(libanogs_base + 0x204218, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+static int hook_anogs_1() { if constexpr (kCallMonitor) AnogsOnCall(libanogs_base + 0x45B334, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+static int hook_anogs_2() { if constexpr (kCallMonitor) AnogsOnCall(libanogs_base + 0x44A714, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+static int hook_anogs_3() { if constexpr (kCallMonitor) AnogsOnCall(libanogs_base + 0x48F964, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
 
 static void AnogsCopyRows(const AnogsRow* view, int used) {
     std::string blob;
@@ -898,6 +899,7 @@ static void AnogsCopyRows(const AnogsRow* view, int used) {
 }
 
 static void DrawAnogsTab() {
+    if (!kCallMonitor) return;
     static AnogsRow view[2048];
     static int used = 0;
     static uint32_t hits = 0;
@@ -912,7 +914,7 @@ static void DrawAnogsTab() {
     ImGui::Checkbox("Full library monitor", checkboxStates["ANOGS::MONITOR"].ptr());
     ImGui::Text("hits %u   callers %d", hits, used);
     ImGui::TextUnformatted("caller -> libanogs function  \"string\"");
-    ImGui::TextUnformatted("Monitor starts off. The 8 patches stay on when it is off.");
+    ImGui::TextUnformatted("Monitor starts off. The 4 patches stay on when it is off.");
     if (ImGui::Button("Copy all")) AnogsCopyRows(view, used);
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
@@ -1017,7 +1019,7 @@ float GetSpeedMultiplier() {
 
 float hooked_get_deltaTime() { 
     if (!orig_get_deltaTime) return 0.016f;
-    AnogsSampleSelf();
+    if constexpr (kCallMonitor) AnogsSampleSelf();
     return orig_get_deltaTime() * GetSpeedMultiplier(); 
 }
 
@@ -1064,15 +1066,11 @@ static void hooking() {
     if (libunity_base == 0) {
         libunity_base = getAbsoluteAddress(DOS("libunity.so"), 0); 
     }
-    static void* anogsOrig[8] = {};
+    static void* anogsOrig[4] = {};
     DOSHOOK((void*)(libanogs_base + GET_OFF("0x204218")), (void*)hook_anogs_0, (void**)&anogsOrig[0]);
     DOSHOOK((void*)(libanogs_base + GET_OFF("0x45B334")), (void*)hook_anogs_1, (void**)&anogsOrig[1]);
     DOSHOOK((void*)(libanogs_base + GET_OFF("0x44A714")), (void*)hook_anogs_2, (void**)&anogsOrig[2]);
     DOSHOOK((void*)(libanogs_base + GET_OFF("0x48F964")), (void*)hook_anogs_3, (void**)&anogsOrig[3]);
-   // DOSHOOK((void*)(libanogs_base + GET_OFF("0x2F7DA4")), (void*)hook_anogs_4, (void**)&anogsOrig[4]);
-    DOSHOOK((void*)(libanogs_base + GET_OFF("0x446140")), (void*)hook_anogs_5, (void**)&anogsOrig[5]);
-    DOSHOOK((void*)(libanogs_base + GET_OFF("0x42560C")), (void*)hook_anogs_6, (void**)&anogsOrig[6]);
- //   DOSHOOK((void*)(libanogs_base + GET_OFF("0x359100")), (void*)hook_anogs_7, (void**)&anogsOrig[7]); 
 
 //FEATURES
 
@@ -1152,5 +1150,5 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x669780C")), (void*)&hook_UpdateCamera
 // Hitbox
 DOSHOOK((void*)(libunity_base + GET_OFF("0xC2BE0C8")), (void*)&hook_SingleLineCheckPhysics, (void**)&orig_SingleLineCheckPhysics);
 
-    std::thread(AnogsWatch).detach();
+    if constexpr (kCallMonitor) std::thread(AnogsWatch).detach();
 }

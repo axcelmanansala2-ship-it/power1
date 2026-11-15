@@ -344,6 +344,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
         };
         
         for (auto& b : buttons) {
+            if (!kCallMonitor && b.id == 8) continue;
             b.anim = Lerp(b.anim, (tab == b.id) ? 1.0f : 0.0f, speed);
             
             ImVec4 iconColor = ImVec4(
