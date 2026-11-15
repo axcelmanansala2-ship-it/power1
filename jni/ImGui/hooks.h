@@ -1,8 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <string>
 #include <atomic>
+#include <dlfcn.h>
 //#include "ImGui/telelog.h"
 
 typedef unsigned long long ulong;
@@ -346,8 +349,159 @@ static float hook_get_m_PhysSkisMaxSpeed(void* instance) {
 }
 
 
-int hook_bypass(){
-return 0;
+struct AnogsRow {
+    uint32_t site;
+    uint32_t count;
+    int n;
+    uintptr_t frames[8];
+    char line[220];
+};
+
+static AnogsRow gAnogsRows[96];
+static int gAnogsUsed = 0;
+static std::atomic<uint32_t> gAnogsHits{0};
+static std::atomic<int> gAnogsLock{0};
+static uintptr_t gAnogsSelf = 0;
+
+static bool AnogsLock() {
+    int expected = 0;
+    return gAnogsLock.compare_exchange_strong(expected, 1, std::memory_order_acquire);
+}
+
+static void AnogsUnlock() {
+    gAnogsLock.store(0, std::memory_order_release);
+}
+
+static bool AnogsSame(const AnogsRow& row, uint32_t site, const uintptr_t* frames, int n) {
+    if (row.site != site || row.n != n) return false;
+    for (int i = 0; i < n; ++i) if (row.frames[i] != frames[i]) return false;
+    return true;
+}
+
+static void AnogsFmt(char* dst, size_t cap, uintptr_t addr) {
+    Dl_info info;
+    if (addr > 0x10000 && dladdr((void*)addr, &info) && info.dli_fbase && info.dli_fname) {
+        const char* name = strrchr(info.dli_fname, '/');
+        name = name ? name + 1 : info.dli_fname;
+        snprintf(dst, cap, "%s+0x%X", name, (unsigned)((uintptr_t)addr - (uintptr_t)info.dli_fbase));
+        return;
+    }
+    snprintf(dst, cap, "0x%llX", (unsigned long long)addr);
+}
+
+static const char* AnogsSiteName(uint32_t site) {
+    if (site == 0x204218) return "crash";
+    if (site == 0x45B334) return "ban";
+    if (site == 0x44A714) return "crc";
+    if (site == 0x48F964) return "callers";
+    return "anogs";
+}
+
+static bool AnogsInSelf(uintptr_t addr) {
+    return gAnogsSelf && addr >= gAnogsSelf && addr < gAnogsSelf + 0x400000;
+}
+
+static void AnogsTrace(uint32_t site, uintptr_t caller) {
+    gAnogsHits.fetch_add(1, std::memory_order_relaxed);
+    if (!gAnogsSelf) {
+        Dl_info info;
+        if (dladdr((void*)&AnogsTrace, &info) && info.dli_fbase) gAnogsSelf = (uintptr_t)info.dli_fbase;
+    }
+    uintptr_t frames[8];
+    int n = 0;
+    if (caller > 0x10000 && !AnogsInSelf(caller)) frames[n++] = caller;
+    int stackMark = 0;
+    uintptr_t anchor = (uintptr_t)&stackMark;
+    uintptr_t start = (uintptr_t)__builtin_frame_address(0);
+    uintptr_t fp = start;
+    bool stackOk = fp && !(fp & 7) && fp + 0x2000 > anchor && fp < anchor + 0x8000;
+    for (int i = 0; stackOk && i < 12 && n < 8; ++i) {
+        if (!fp || (fp & 7) || fp + 16 < anchor || fp > anchor + 0x40000) break;
+        uintptr_t prev = *(uintptr_t*)fp;
+        uintptr_t lr = *(uintptr_t*)(fp + 8);
+        if (lr > 0x10000 && !AnogsInSelf(lr)) {
+            bool seen = false;
+            for (int k = 0; k < n; ++k) if (frames[k] == lr) seen = true;
+            if (!seen) frames[n++] = lr;
+        }
+        if (prev <= fp) break;
+        fp = prev;
+    }
+    if (!AnogsLock()) return;
+    for (int i = 0; i < gAnogsUsed; ++i) {
+        if (AnogsSame(gAnogsRows[i], site, frames, n)) {
+            gAnogsRows[i].count++;
+            AnogsUnlock();
+            return;
+        }
+    }
+    if (gAnogsUsed < 96) {
+        AnogsRow& row = gAnogsRows[gAnogsUsed++];
+        row.site = site;
+        row.count = 1;
+        row.n = n;
+        for (int i = 0; i < n; ++i) row.frames[i] = frames[i];
+        char siteBuf[48];
+        snprintf(siteBuf, sizeof(siteBuf), "libanogs.so+0x%X", site);
+        size_t used = 0;
+        row.line[0] = 0;
+        for (int i = n - 1; i >= 0; --i) {
+            char part[64];
+            AnogsFmt(part, sizeof(part), frames[i]);
+            int wrote = snprintf(row.line + used, sizeof(row.line) - used, "%s%s", used ? " -> " : "", part);
+            if (wrote < 0 || (size_t)wrote >= sizeof(row.line) - used) break;
+            used += (size_t)wrote;
+        }
+        snprintf(row.line + used, sizeof(row.line) - used, "%s%s", used ? " -> " : "", siteBuf);
+    }
+    AnogsUnlock();
+}
+
+static int hook_anogs_0() { AnogsTrace(0x204218, (uintptr_t)__builtin_return_address(0)); return 0; }
+static int hook_anogs_1() { AnogsTrace(0x45B334, (uintptr_t)__builtin_return_address(0)); return 0; }
+static int hook_anogs_2() { AnogsTrace(0x44A714, (uintptr_t)__builtin_return_address(0)); return 0; }
+static int hook_anogs_3() { AnogsTrace(0x48F964, (uintptr_t)__builtin_return_address(0)); return 0; }
+
+static void DrawAnogsTab() {
+    static AnogsRow view[96];
+    static int used = 0;
+    static uint32_t hits = 0;
+    if (AnogsLock()) {
+        hits = gAnogsHits.load(std::memory_order_relaxed);
+        used = gAnogsUsed;
+        for (int i = 0; i < used; ++i) view[i] = gAnogsRows[i];
+        AnogsUnlock();
+    }
+
+    ImGui::BeginChild("##AnogsTab", ImVec2(0, 0), true);
+    ImGui::Text("libanogs  hits %u  chains %d", hits, used);
+    ImGui::TextUnformatted("outer caller -> anogs site");
+    if (ImGui::Button("Clear")) {
+        if (AnogsLock()) {
+            gAnogsUsed = 0;
+            gAnogsHits.store(0, std::memory_order_relaxed);
+            AnogsUnlock();
+        }
+    }
+    ImGui::Separator();
+    ImGui::BeginChild("##AnogsLog", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+    if (used == 0) {
+        ImGui::TextUnformatted("Waiting for libanogs calls.");
+    } else {
+        ImGuiListClipper clipper;
+        clipper.Begin(used);
+        while (clipper.Step()) {
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                ImGui::PushID(i);
+                char head[280];
+                snprintf(head, sizeof(head), "%s  x%u  %s", AnogsSiteName(view[i].site), view[i].count, view[i].line);
+                ImGui::Selectable(head, false);
+                ImGui::PopID();
+            }
+        }
+    }
+    ImGui::EndChild();
+    ImGui::EndChild();
 }
 
 
@@ -359,172 +513,6 @@ static int hook_GetFrameRateValue(void* instance, int fl, int mode) {
     if (instance != nullptr && gMatchLive.load() && checkboxStates["FRAME120"]) return 120;
     if (instance != nullptr && gMatchLive.load() && checkboxStates["FRAME40"]) return 40;
     return orig_GetFrameRateValue(instance, fl, mode);
-}
-
-// CODM 1.6.59 skin ownership. Client checks only. Server still accepts or rejects the equip.
-static bool SkinUnlockOn() {
-    return checkboxStates["SKINUNLOCK"];
-}
-
-static bool (*orig_Loadout_IsHasInventoryData)(uint32_t itemID) = nullptr;
-static bool hook_Loadout_IsHasInventoryData(uint32_t itemID) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_Loadout_IsHasInventoryData) return false;
-    return orig_Loadout_IsHasInventoryData(itemID);
-}
-
-static bool (*orig_Squad_IsHasInventoryData)(void* thiz, uint32_t itemID) = nullptr;
-static bool hook_Squad_IsHasInventoryData(void* thiz, uint32_t itemID) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_Squad_IsHasInventoryData) return false;
-    return orig_Squad_IsHasInventoryData(thiz, itemID);
-}
-
-static bool (*orig_Own_IsHasInventoryData)(void* thiz, uint32_t itemID) = nullptr;
-static bool hook_Own_IsHasInventoryData(void* thiz, uint32_t itemID) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_Own_IsHasInventoryData) return false;
-    return orig_Own_IsHasInventoryData(thiz, itemID);
-}
-
-static bool (*orig_IsOwnPermanentItem)(void* thiz, uint32_t id, uint32_t ownerId) = nullptr;
-static bool hook_IsOwnPermanentItem(void* thiz, uint32_t id, uint32_t ownerId) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_IsOwnPermanentItem) return false;
-    return orig_IsOwnPermanentItem(thiz, id, ownerId);
-}
-
-static bool (*orig_IsCharacterLocked)(void* thiz, uint32_t characterID) = nullptr;
-static bool hook_IsCharacterLocked(void* thiz, uint32_t characterID) {
-    if (SkinUnlockOn()) return false;
-    if (!orig_IsCharacterLocked) return false;
-    return orig_IsCharacterLocked(thiz, characterID);
-}
-
-static bool (*orig_IsLockBaseRole)(void* thiz, uint32_t roleBaseID, void* ownRoles) = nullptr;
-static bool hook_IsLockBaseRole(void* thiz, uint32_t roleBaseID, void* ownRoles) {
-    if (SkinUnlockOn()) return false;
-    if (!orig_IsLockBaseRole) return false;
-    return orig_IsLockBaseRole(thiz, roleBaseID, ownRoles);
-}
-
-static bool (*orig_IsShowLockIcon)(void* thiz, int gameType, uint32_t itemId) = nullptr;
-static bool hook_IsShowLockIcon(void* thiz, int gameType, uint32_t itemId) {
-    if (SkinUnlockOn()) return false;
-    if (!orig_IsShowLockIcon) return false;
-    return orig_IsShowLockIcon(thiz, gameType, itemId);
-}
-
-static bool (*orig_IsSkinCamoConceptUnlocked)(int weaponType, uint32_t baseWeaponID, uint32_t camosConceptType) = nullptr;
-static bool hook_IsSkinCamoConceptUnlocked(int weaponType, uint32_t baseWeaponID, uint32_t camosConceptType) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_IsSkinCamoConceptUnlocked) return false;
-    return orig_IsSkinCamoConceptUnlocked(weaponType, baseWeaponID, camosConceptType);
-}
-
-static bool (*orig_CamosConceptUnlocked)(uint32_t camosConceptID) = nullptr;
-static bool hook_CamosConceptUnlocked(uint32_t camosConceptID) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_CamosConceptUnlocked) return false;
-    return orig_CamosConceptUnlocked(camosConceptID);
-}
-
-static bool (*orig_SpecialCamoUnlocked)(uint32_t baseWeaponID) = nullptr;
-static bool hook_SpecialCamoUnlocked(uint32_t baseWeaponID) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_SpecialCamoUnlocked) return false;
-    return orig_SpecialCamoUnlocked(baseWeaponID);
-}
-
-static bool (*orig_IsWeaponSkinUnlock)(void* thiz, uint32_t skinId) = nullptr;
-static bool hook_IsWeaponSkinUnlock(void* thiz, uint32_t skinId) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_IsWeaponSkinUnlock) return false;
-    return orig_IsWeaponSkinUnlock(thiz, skinId);
-}
-
-static bool (*orig_IsOwnedAppearance)(uint32_t itemId, uint32_t itemSubType) = nullptr;
-static bool hook_IsOwnedAppearance(uint32_t itemId, uint32_t itemSubType) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_IsOwnedAppearance) return false;
-    return orig_IsOwnedAppearance(itemId, itemSubType);
-}
-
-static bool (*orig_CanEuippedRoleSkin)(void* thiz, uint32_t itemID) = nullptr;
-static bool hook_CanEuippedRoleSkin(void* thiz, uint32_t itemID) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_CanEuippedRoleSkin) return false;
-    return orig_CanEuippedRoleSkin(thiz, itemID);
-}
-
-static bool (*orig_CanEuippedRoleSkin2)(void* roleConfig, void* roleSkinConfig) = nullptr;
-static bool hook_CanEuippedRoleSkin2(void* roleConfig, void* roleSkinConfig) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_CanEuippedRoleSkin2) return false;
-    return orig_CanEuippedRoleSkin2(roleConfig, roleSkinConfig);
-}
-
-static bool (*orig_CanEquipRoleSkin)(void* playerInfo, uint32_t itemId) = nullptr;
-static bool hook_CanEquipRoleSkin(void* playerInfo, uint32_t itemId) {
-    if (SkinUnlockOn()) return true;
-    if (!orig_CanEquipRoleSkin) return false;
-    return orig_CanEquipRoleSkin(playerInfo, itemId);
-}
-
-// Typed IDs. Dump 1.6.59 has no skin catalog; RoleSkinConfig.ID and WeaponCamosConfig.CamoItemID are filled at runtime.
-uint32_t gWeaponSkinId = 0;
-uint32_t gSuitSkinId = 0;
-static uint32_t (*fn_GetBaseWeaponID)(uint32_t weaponID) = nullptr;
-static void* (*fn_GetConceptList)(uint32_t baseWeaponId) = nullptr;
-static void* (*fn_GetCamosByConcept)(uint32_t conceptId) = nullptr;
-static void* (*fn_GetWeaponArray)() = nullptr;
-static void* (*fn_CurrentWeapon)() = nullptr;
-static int (*fn_GetItemID)(void* weapon) = nullptr;
-static uint32_t (*fn_GetCurSkinID)(void* weapon) = nullptr;
-
-static bool SkinSwapOn() {
-    return checkboxStates["SKINSWAP"];
-}
-
-static uint32_t (*orig_Weapon_get_CurSkinID)(void* thiz) = nullptr;
-static uint32_t hook_Weapon_get_CurSkinID(void* thiz) {
-    uint32_t id = orig_Weapon_get_CurSkinID ? orig_Weapon_get_CurSkinID(thiz) : 0;
-    if (SkinSwapOn() && gWeaponSkinId != 0 && id == 0) return gWeaponSkinId;
-    return id;
-}
-
-static uint32_t (*orig_get_NetSuitID)(void* thiz) = nullptr;
-static uint32_t hook_get_NetSuitID(void* thiz) {
-    uint32_t id = orig_get_NetSuitID ? orig_get_NetSuitID(thiz) : 0;
-    if (SkinSwapOn() && gSuitSkinId != 0 && id == 0) return gSuitSkinId;
-    return id;
-}
-
-static int (*orig_GetModelAssetID)(int assetID, uint32_t skinID, bool for1P, uint8_t skinType, bool isPawn, bool isWeapon, uint64_t roleID) = nullptr;
-static int hook_GetModelAssetID(int assetID, uint32_t skinID, bool for1P, uint8_t skinType, bool isPawn, bool isWeapon, uint64_t roleID) {
-    if (!orig_GetModelAssetID) return assetID;
-    if (SkinSwapOn() && skinID == 0) {
-        if (isWeapon && gWeaponSkinId != 0) skinID = gWeaponSkinId;
-        else if (isPawn && gSuitSkinId != 0) skinID = gSuitSkinId;
-    }
-    return orig_GetModelAssetID(assetID, skinID, for1P, skinType, isPawn, isWeapon, roleID);
-}
-
-static int (*orig_GetModelAssetID2)(int assetID, uint32_t skinID, bool for1P, uint64_t roleID, bool isWeapon, bool isUsePawnSkin) = nullptr;
-static int hook_GetModelAssetID2(int assetID, uint32_t skinID, bool for1P, uint64_t roleID, bool isWeapon, bool isUsePawnSkin) {
-    if (!orig_GetModelAssetID2) return assetID;
-    if (SkinSwapOn() && skinID == 0) {
-        if (isUsePawnSkin && gSuitSkinId != 0) skinID = gSuitSkinId;
-        else if (isWeapon && gWeaponSkinId != 0) skinID = gWeaponSkinId;
-    }
-    return orig_GetModelAssetID2(assetID, skinID, for1P, roleID, isWeapon, isUsePawnSkin);
-}
-
-static void (*orig_SkinDoChange)(void* root, int weaponID, uint32_t skinID, bool is1P, uint8_t skinType, void* ultSkinIndex, bool isUI, uint64_t roleID) = nullptr;
-static void hook_SkinDoChange(void* root, int weaponID, uint32_t skinID, bool is1P, uint8_t skinType, void* ultSkinIndex, bool isUI, uint64_t roleID) {
-    if (!orig_SkinDoChange) return;
-    if (SkinSwapOn() && skinID == 0 && gWeaponSkinId != 0) skinID = gWeaponSkinId;
-    orig_SkinDoChange(root, weaponID, skinID, is1P, skinType, ultSkinIndex, isUI, roleID);
 }
 
 static void (*o_OnReSpawnPlayer)(void *, Vector3) = nullptr;
@@ -631,18 +619,11 @@ static void hooking() {
     if (libunity_base == 0) {
         libunity_base = getAbsoluteAddress(DOS("libunity.so"), 0); 
     }
-    fn_GetBaseWeaponID = (uint32_t (*)(uint32_t))(libunity_base + GET_OFF("0x5A4C18C"));
-    fn_GetConceptList = (void* (*)(uint32_t))(libunity_base + GET_OFF("0x85D45CC"));
-    fn_GetCamosByConcept = (void* (*)(uint32_t))(libunity_base + GET_OFF("0x85D4C74"));
-    fn_GetWeaponArray = (void* (*)())(libunity_base + GET_OFF("0xD90B8E8"));
-    fn_CurrentWeapon = (void* (*)())(libunity_base + GET_OFF("0x80167E8"));
-    fn_GetItemID = (int (*)(void*))(libunity_base + GET_OFF("0xC0D0088"));
-    fn_GetCurSkinID = (uint32_t (*)(void*))(libunity_base + GET_OFF("0x5471B10"));
-
-BYPASS("0x204218"); 
-BYPASS("0x45B334");  
-BYPASS("0x44A714");  
-BYPASS("0x48F964"); 
+    static void* anogsOrig[4] = {nullptr, nullptr, nullptr, nullptr};
+    DOSHOOK((void*)(libanogs_base + GET_OFF("0x204218")), (void*)hook_anogs_0, (void**)&anogsOrig[0]);
+    DOSHOOK((void*)(libanogs_base + GET_OFF("0x45B334")), (void*)hook_anogs_1, (void**)&anogsOrig[1]);
+    DOSHOOK((void*)(libanogs_base + GET_OFF("0x44A714")), (void*)hook_anogs_2, (void**)&anogsOrig[2]);
+    DOSHOOK((void*)(libanogs_base + GET_OFF("0x48F964")), (void*)hook_anogs_3, (void**)&anogsOrig[3]); 
 
 //FEATURES
 

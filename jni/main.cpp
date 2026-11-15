@@ -97,30 +97,6 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 
 EGLBoolean (*orig_eglSwapBuffers)(...);
 
-static bool gSkinDone = false;
-static char gSkinPath[128] = "";
-
-static void SaveSkinFileNow() {
-    if (gSkinDone) return;
-    const char* paths[] = {
-        "/sdcard/codm_skins.txt",
-        "/storage/emulated/0/codm_skins.txt",
-        "/sdcard/Android/data/com.garena.game.codm/files/codm_skins.txt"
-    };
-    for (const char* path : paths) {
-        FILE* out = fopen(path, "w");
-        if (!out) continue;
-        fprintf(out, "weapon base default skins\n");
-        fclose(out);
-        snprintf(gSkinPath, sizeof(gSkinPath), "%s", path);
-        gSkinDone = true;
-        return;
-    }
-    snprintf(gSkinPath, sizeof(gSkinPath), "%s", "sdcard write failed");
-    gSkinDone = true;
-}
-
-
 static void AccelForce120(EGLDisplay dpy) {
     if (checkboxStates["FRAME120"] && gMatchLive.load()) eglSwapInterval(dpy, 0);
 }
@@ -357,6 +333,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             { ICON_FA_MICROCHIP,  3, 0.0f },
          { ICON_FA_BULLSEYE,   7, 0.0f },
             { ICON_FA_COGS,       5, 0.0f },
+            { ICON_FA_SHIELD,     8, 0.0f },
         };
         
         ImGuiIO& io = ImGui::GetIO();
@@ -555,8 +532,6 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 ImGui::Columns(2, nullptr, false);
                 g_widgets.checkbox("120 FPS", &checkboxStates["FRAME120"]);
                 ImGui::NextColumn();
-                g_widgets.checkbox("Unlock skins", &checkboxStates["SKINUNLOCK"]);
-                ImGui::NextColumn();
                 g_widgets.checkbox("Super low graphics", &checkboxStates["LOWGFX"]);
                 ImGui::NextColumn();
                 g_widgets.checkbox("Hand Cam Mode", &checkboxStates["HAND::CAM"]);
@@ -566,11 +541,6 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 ImGui::Columns(1);
                 ImGui::EndGroupPanel();
 
-                ImGui::Spacing();
-                ImGui::BeginGroupPanel("Skin ID", ImVec2(-1, 0));
-                ImGui::TextWrapped("%s", gSkinPath[0] ? gSkinPath : "waiting");
-                ImGui::EndGroupPanel();
-                
                 ImGui::Spacing();
                 
                 ImGui::BeginGroupPanel("Esp Colors", ImVec2(-1, 0));
@@ -605,6 +575,11 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             ImGui::Spacing();
             WeaponCfg::DrawTab();
         }
+        if (tab == 8)
+        {
+            ImGui::Spacing();
+            DrawAnogsTab();
+        }
         ImGui::EndChild();
         ImGui::Columns(1);
     }
@@ -636,7 +611,6 @@ void Init_Thread(){
     
     INIT_OFFSETS();
     hooking();
-    SaveSkinFileNow();
     
     DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     started = true;
