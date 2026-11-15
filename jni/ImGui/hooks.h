@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <atomic>
 //#include "ImGui/telelog.h"
 
 typedef unsigned long long ulong;
@@ -351,11 +352,12 @@ return 0;
 
 
 //FPSHIGH
+extern std::atomic<bool> gMatchLive;
 static int (*orig_GetFrameRateValue)(void* instance, int fl, int mode) = nullptr;
 static int hook_GetFrameRateValue(void* instance, int fl, int mode) {
     if (!orig_GetFrameRateValue) return 60;
-    if (instance != nullptr && MatchGame.load() && checkboxStates["FRAME120"]) return 120;
-    if (instance != nullptr && MatchGame.load() && checkboxStates["FRAME40"]) return 40;
+    if (instance != nullptr && gMatchLive.load() && checkboxStates["FRAME120"]) return 120;
+    if (instance != nullptr && gMatchLive.load() && checkboxStates["FRAME40"]) return 40;
     return orig_GetFrameRateValue(instance, fl, mode);
 }
 

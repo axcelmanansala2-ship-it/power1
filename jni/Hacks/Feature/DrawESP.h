@@ -1,3 +1,4 @@
+#include <atomic>
 #include <unordered_map> 
 #include <cmath>       
 #include "ImGui/skeleton.h"
@@ -5,7 +6,7 @@
 #include <cstdio>
 #pragma once
 std::unordered_map<std::string, int> dropdownStates;
-std::atomic<bool> MatchGame{false};
+std::atomic<bool> gMatchLive{false};
 
 void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text) {
     draw->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 200), text);
@@ -285,7 +286,7 @@ void drawESP__Player(ImDrawList *draw) {
     BaseGame *get_MatchGame = GamePlay::get_MatchGame();
     if (!Tools::IsPtrValid(get_MatchGame)) return;
     
-    MatchGame = true;
+    gMatchLive = true;
     
     Pawn *get_LocalPawn = GamePlay::get_LocalPawn();
     if (!Tools::IsPtrValid(get_LocalPawn)) return;
