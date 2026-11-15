@@ -61,25 +61,8 @@ typedef void (*SetUltraFrameRateDeviceInfo_t)(void *, bool, int, int, int, bool)
 static SetUltraFrameRateDeviceInfo_t orig_SetUltraFrameRateDeviceInfo;
 
 static void hooked_SetUltraFrameRateDeviceInfo(void *thiz, bool enableUltraFrameRate, int ultraFrameRate, int ultraFrameRateBR, int ultraFrameRateQualityLimit, bool customizedFrameRate) {
-    if (!thiz || !orig_SetUltraFrameRateDeviceInfo) return;
-    if (checkboxStates["FRAME120"]) {
-        orig_SetUltraFrameRateDeviceInfo(thiz, true, 120, 120, 120, true);
-        return;
-    }
+    if (!orig_SetUltraFrameRateDeviceInfo) return;
     orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
-}
-
-static void (*orig_set_targetFrameRate)(int) = nullptr;
-static void hook_set_targetFrameRate(int value) {
-    if (checkboxStates["FRAME120"]) value = 120;
-    if (orig_set_targetFrameRate) orig_set_targetFrameRate(value);
-}
-
-static void (*orig_SetFrameRate)(void*, int, bool) = nullptr;
-static void hook_SetFrameRate(void* thiz, int target, bool gm) {
-    if (!orig_SetFrameRate) return;
-    if (checkboxStates["FRAME120"]) target = 120;
-    orig_SetFrameRate(thiz, target, gm);
 }
 
 //fastscope
@@ -319,7 +302,7 @@ static void hook_set_EnableVulkan(void *instance, bool value) {
 //unlock all graphics
 static void (*orig_SetEnableVSync)(void* thiz);
 static void hook_SetEnableVSync(void* thiz) {
-    if (!checkboxStates["FRAME120"] && orig_SetEnableVSync) orig_SetEnableVSync(thiz);
+    if (orig_SetEnableVSync) orig_SetEnableVSync(thiz);
 }
 
 
@@ -371,8 +354,8 @@ return 0;
 static int (*orig_GetFrameRateValue)(void* instance, int fl, int mode) = nullptr;
 static int hook_GetFrameRateValue(void* instance, int fl, int mode) {
     if (!orig_GetFrameRateValue) return 60;
-    if (instance != nullptr && checkboxStates["FRAME120"]) return 120;
-    if (instance != nullptr && checkboxStates["FRAME40"]) return 40;
+    if (instance != nullptr && MatchGame.load() && checkboxStates["FRAME120"]) return 120;
+    if (instance != nullptr && MatchGame.load() && checkboxStates["FRAME40"]) return 40;
     return orig_GetFrameRateValue(instance, fl, mode);
 }
 
@@ -510,8 +493,6 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x53D2114")), (void*)&h_OnReSpawnPlayer
 // CODM Dump 1.6.59.cs on libunity.so
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCCC")), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAD000")), (void*)hook_SetFrameRate, (void**)&orig_SetFrameRate);
 
 // Snowboard Speed
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53FE7FC")), (void*)hook_get_m_PhysSkisMaxSpeed, (void**)&orig_get_m_PhysSkisMaxSpeed);

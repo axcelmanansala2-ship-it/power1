@@ -96,7 +96,7 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 
 EGLBoolean (*orig_eglSwapBuffers)(...);
 static void AccelForce120(EGLDisplay dpy) {
-    if (checkboxStates["FRAME120"]) eglSwapInterval(dpy, 0);
+    if (checkboxStates["FRAME120"] && MatchGame.load()) eglSwapInterval(dpy, 0);
 }
 
 EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
