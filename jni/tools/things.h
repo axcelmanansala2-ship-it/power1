@@ -76,21 +76,18 @@ bool CustomSliderFloat(const char* label, float* v, float v_min, float v_max, co
 
 int DrawMacOSHeaderButtons()
 {
-    const float btn = 44.0f;
-    float right = ImGui::GetWindowContentRegionMax().x - btn * 2.0f - 8.0f;
-    if (right < ImGui::GetCursorPosX()) right = ImGui::GetCursorPosX();
+    const float btn = 48.0f;
+    float right = ImGui::GetWindowContentRegionMax().x - btn;
+    if (right < 8.0f) right = 8.0f;
     ImGui::SetCursorPosX(right);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.26f, 0.28f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.34f, 0.34f, 0.36f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.22f, 0.24f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.32f, 0.32f, 0.34f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.40f, 0.40f, 0.42f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.92f, 0.92f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
 
-    int action = 0;
-    if (ImGui::Button("-", ImVec2(btn, btn))) action = 1;
-    ImGui::SameLine(0.0f, 8.0f);
-    if (ImGui::Button("X", ImVec2(btn, btn))) action = 2;
+    int action = ImGui::Button("-", ImVec2(btn, btn)) ? 1 : 0;
 
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(4);

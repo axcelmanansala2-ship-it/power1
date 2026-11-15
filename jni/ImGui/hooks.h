@@ -56,8 +56,19 @@ static uintptr_t libunity_base = 0;
 // ================= OFFSET ENCRYPTION =================
 
 
-// dump.cs — liblogic.so Application.set_targetFrameRate / QualitySettings.set_vSyncCount
-// dump.cs — libcsharp.so TransformFrameRateLevel2Value / GetFrameRateValueMapping / ApplyFrameRateValue
+// jnmaini FPS unlock, plus dump.cs so the game cannot write a lower cap back.
+typedef void (*SetUltraFrameRateDeviceInfo_t)(void *, bool, int, int, int, bool);
+static SetUltraFrameRateDeviceInfo_t orig_SetUltraFrameRateDeviceInfo;
+
+static void hooked_SetUltraFrameRateDeviceInfo(void *thiz, bool enableUltraFrameRate, int ultraFrameRate, int ultraFrameRateBR, int ultraFrameRateQualityLimit, bool customizedFrameRate) {
+    if (!thiz || !orig_SetUltraFrameRateDeviceInfo) return;
+    if (checkboxStates["FRAME120"]) {
+        orig_SetUltraFrameRateDeviceInfo(thiz, true, 120, 120, 120, true);
+        return;
+    }
+    orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
+}
+
 static void (*orig_set_targetFrameRate)(int) = nullptr;
 static void hook_set_targetFrameRate(int value) {
     if (checkboxStates["FRAME120"]) value = 120;
@@ -85,15 +96,7 @@ static int hook_GetFrameRateValueMapping(void* self, bool isMaxLevel) {
 static void (*orig_ApplyFrameRateValue)(void*, int, int) = nullptr;
 static void hook_ApplyFrameRateValue(void* self, int frameLv, int modeIndex) {
     if (orig_ApplyFrameRateValue) orig_ApplyFrameRateValue(self, frameLv, modeIndex);
-    if (checkboxStates["FRAME120"] && orig_set_targetFrameRate) orig_set_targetFrameRate(120);
 }
-
-static void (*dump_SetQualityLevel)(int, bool) = nullptr;
-static void (*dump_set_shadows)(int) = nullptr;
-static void (*dump_set_shadowDistance)(float) = nullptr;
-static void (*dump_set_antiAliasing)(int) = nullptr;
-static void (*dump_set_masterTextureLimit)(int) = nullptr;
-static void (*dump_set_pixelLightCount)(int) = nullptr;
 
 static bool g_dumpPerfReady = false;
 static void InstallDumpPerfHooks() {
@@ -105,35 +108,12 @@ static void InstallDumpPerfHooks() {
     if (logic) {
         DOSHOOK((void*)(logic + 0x138ac64), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
         DOSHOOK((void*)(logic + 0x12ee960), (void*)hook_set_vSyncCount, (void**)&orig_set_vSyncCount);
-        dump_SetQualityLevel = (void (*)(int, bool))(logic + 0x12ee410);
-        dump_set_shadows = (void (*)(int))(logic + 0x12ee518);
-        dump_set_shadowDistance = (void (*)(float))(logic + 0x12ee690);
-        dump_set_antiAliasing = (void (*)(int))(logic + 0x12ee9dc);
-        dump_set_masterTextureLimit = (void (*)(int))(logic + 0x12ee8e4);
-        dump_set_pixelLightCount = (void (*)(int))(logic + 0x12ee49c);
     }
     if (csharp) {
         DOSHOOK((void*)(csharp + 0x477e318), (void*)hook_TransformFrameRateLevel2Value, (void**)&orig_TransformFrameRateLevel2Value);
         DOSHOOK((void*)(csharp + 0x3a3bcf0), (void*)hook_GetFrameRateValueMapping, (void**)&orig_GetFrameRateValueMapping);
         DOSHOOK((void*)(csharp + 0x4783e5c), (void*)hook_ApplyFrameRateValue, (void**)&orig_ApplyFrameRateValue);
     }
-}
-
-static void ApplyDumpPerf() {
-    InstallDumpPerfHooks();
-    if (checkboxStates["FRAME120"]) {
-        if (orig_set_targetFrameRate) orig_set_targetFrameRate(120);
-        if (orig_set_vSyncCount) orig_set_vSyncCount(0);
-    }
-    if (!checkboxStates["LOWGFX"]) return;
-    static int tick = 0;
-    if ((tick++ % 45) != 0) return;
-    if (dump_SetQualityLevel) dump_SetQualityLevel(0, true);
-    if (dump_set_shadows) dump_set_shadows(0);
-    if (dump_set_shadowDistance) dump_set_shadowDistance(0.0f);
-    if (dump_set_antiAliasing) dump_set_antiAliasing(0);
-    if (dump_set_masterTextureLimit) dump_set_masterTextureLimit(2);
-    if (dump_set_pixelLightCount) dump_set_pixelLightCount(0);
 }
 
 //fastscope
@@ -373,7 +353,8 @@ static void hook_set_EnableVulkan(void *instance, bool value) {
 //unlock all graphics
 static void (*orig_SetEnableVSync)(bool enabled);
 static void hook_SetEnableVSync(bool enabled) {
-    orig_SetEnableVSync(false);
+    if (checkboxStates["FRAME120"]) enabled = false;
+    if (orig_SetEnableVSync) orig_SetEnableVSync(enabled);
 }
 
 
@@ -566,7 +547,9 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x534D8E4")), (void*)hooked_get_fixedDe
 // Wallhack
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53D2114")), (void*)&h_OnReSpawnPlayer, (void**)&o_OnReSpawnPlayer);
 
-// FPS from dump.cs (old libunity offsets removed)
+// jnmaini FPS hooks
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
 InstallDumpPerfHooks();
 
 // Snowboard Speed
