@@ -419,7 +419,8 @@ static void AnogsPullString(char* dst, int cap, uintptr_t p) {
 
 static void AnogsOnCall(uintptr_t site, uintptr_t caller, uintptr_t arg0, uintptr_t arg1) {
     gAnogsHits.fetch_add(1, std::memory_order_relaxed);
-    if (!caller || AnogsInSelf(caller)) return;
+    if (!site || site < 0x10000) return;
+    if (caller && AnogsInSelf(caller)) return;
     if (!gAnogsSelf) {
         Dl_info info;
         if (dladdr((void*)&AnogsOnCall, &info) && info.dli_fbase) gAnogsSelf = (uintptr_t)info.dli_fbase;
@@ -441,13 +442,15 @@ static void AnogsOnCall(uintptr_t site, uintptr_t caller, uintptr_t arg0, uintpt
             row.caller = caller;
             row.count = 1;
             char from[64], str0[49], str1[49];
-            AnogsFmt(from, sizeof(from), caller);
+            if (caller) AnogsFmt(from, sizeof(from), caller);
+            else from[0] = 0;
             AnogsPullString(str0, sizeof(str0), arg0);
             AnogsPullString(str1, sizeof(str1), arg1);
-            if (str0[0] && str1[0]) snprintf(row.line, sizeof(row.line), "%s -> libanogs.so+0x%X  \"%s\" \"%s\"", from, siteOff, str0, str1);
-            else if (str0[0]) snprintf(row.line, sizeof(row.line), "%s -> libanogs.so+0x%X  \"%s\"", from, siteOff, str0);
-            else if (str1[0]) snprintf(row.line, sizeof(row.line), "%s -> libanogs.so+0x%X  \"%s\"", from, siteOff, str1);
-            else snprintf(row.line, sizeof(row.line), "%s -> libanogs.so+0x%X", from, siteOff);
+            const char* quote = str0[0] ? str0 : str1;
+            if (from[0] && quote[0]) snprintf(row.line, sizeof(row.line), "%s -> libanogs.so+0x%X  \"%s\"", from, siteOff, quote);
+            else if (from[0]) snprintf(row.line, sizeof(row.line), "%s -> libanogs.so+0x%X", from, siteOff);
+            else if (quote[0]) snprintf(row.line, sizeof(row.line), "libanogs.so+0x%X  \"%s\"", siteOff, quote);
+            else snprintf(row.line, sizeof(row.line), "libanogs.so+0x%X", siteOff);
             gAnogsSlot[slot] = (uint32_t)gAnogsUsed + 1;
             gAnogsUsed++;
             break;
@@ -459,6 +462,142 @@ static void AnogsOnCall(uintptr_t site, uintptr_t caller, uintptr_t arg0, uintpt
         }
     }
     AnogsUnlock();
+}
+
+static AnogsSpan gAnoExec[8];
+static int gAnoExecN = 0;
+static AnogsSpan gCodeSpans[24];
+static int gCodeN = 0;
+
+static bool AnogsInSpans(uintptr_t p, const AnogsSpan* spans, int n) {
+    for (int i = 0; i < n; ++i) if (p >= spans[i].a && p < spans[i].b) return true;
+    return false;
+}
+
+static bool AnogsVmRead(void* dst, uintptr_t src, size_t n) {
+    if (!dst || !src || !n) return false;
+    struct iovec local;
+    struct iovec remote;
+    local.iov_base = dst;
+    local.iov_len = n;
+    remote.iov_base = (void*)src;
+    remote.iov_len = n;
+    return syscall(__NR_process_vm_readv, (long)getpid(), &local, 1L, &remote, 1L, 0L) == (long)n;
+}
+
+static void AnogsRefreshMaps() {
+    AnogsSpan execs[8], codes[24], reads[16];
+    int execN = 0, codeN = 0, readN = 0;
+    FILE* fp = fopen("/proc/self/maps", "r");
+    if (!fp) return;
+    char line[768];
+    while (fgets(line, sizeof(line), fp)) {
+        unsigned long s = 0, e = 0;
+        char perm[8] = {0};
+        if (sscanf(line, "%lx-%lx %7s", &s, &e, perm) < 3 || e <= s) continue;
+        bool ano = strstr(line, "libanogs.so") != nullptr;
+        bool uni = strstr(line, "libunity.so") != nullptr;
+        if (perm[2] == 'x' && e - s < 64ul * 1024 * 1024 && codeN < 24) {
+            codes[codeN].a = (uintptr_t)s;
+            codes[codeN].b = (uintptr_t)e;
+            codeN++;
+        }
+        if (ano && perm[2] == 'x' && execN < 8) {
+            execs[execN].a = (uintptr_t)s;
+            execs[execN].b = (uintptr_t)e;
+            execN++;
+        }
+        if ((ano || uni) && perm[0] == 'r' && readN < 16 && e - s < 64ul * 1024 * 1024) {
+            reads[readN].a = (uintptr_t)s;
+            reads[readN].b = (uintptr_t)e;
+            readN++;
+        }
+    }
+    fclose(fp);
+    for (int i = 0; i < execN; ++i) gAnoExec[i] = execs[i];
+    for (int i = 0; i < codeN; ++i) gCodeSpans[i] = codes[i];
+    for (int i = 0; i < readN; ++i) gReadSpans[i] = reads[i];
+    gAnoExecN = execN;
+    gCodeN = codeN;
+    gReadN = readN;
+}
+
+static void AnogsScanStack(uintptr_t start, uintptr_t end) {
+    if (end <= start || end - start > 8ul * 1024 * 1024 || gAnoExecN == 0) return;
+    static uint8_t chunk[32 * 1024];
+    for (uintptr_t addr = start; addr + 8 <= end; ) {
+        size_t n = (size_t)(end - addr);
+        if (n > sizeof(chunk)) n = sizeof(chunk);
+        n &= ~((size_t)7);
+        if (n < 8) break;
+        if (!AnogsVmRead(chunk, addr, n)) {
+            addr += 4096;
+            continue;
+        }
+        for (size_t i = 0; i + 8 <= n; i += 8) {
+            uintptr_t v = 0;
+            memcpy(&v, chunk + i, 8);
+            if (!AnogsInSpans(v, gAnoExec, gAnoExecN)) continue;
+            uintptr_t caller = 0;
+            uintptr_t text = 0;
+            for (int d = -16; d <= 16; d += 8) {
+                if (d == 0) continue;
+                if (d < 0 && i < (size_t)(-d)) continue;
+                if (d > 0 && i + (size_t)d + 8 > n) continue;
+                uintptr_t near = 0;
+                memcpy(&near, chunk + i + d, 8);
+                if (!caller && AnogsInSpans(near, gCodeSpans, gCodeN) && !AnogsInSpans(near, gAnoExec, gAnoExecN)) caller = near;
+                if (!text && AnogsMapped(near)) text = near;
+            }
+            AnogsOnCall(v, caller, text, 0);
+        }
+        addr += n;
+    }
+}
+
+static void AnogsSampleSelf() {
+    static int tick = 0;
+    if ((++tick & 31) != 0 || gAnoExecN == 0) return;
+    int mark = 0;
+    uintptr_t anchor = (uintptr_t)&mark;
+    uintptr_t fp = (uintptr_t)__builtin_frame_address(0);
+    for (int i = 0; i < 16; ++i) {
+        if (!fp || (fp & 7) || fp + 16 < anchor || fp > anchor + 0x40000) break;
+        uintptr_t prev = 0, lr = 0;
+        memcpy(&prev, (void*)fp, 8);
+        memcpy(&lr, (void*)(fp + 8), 8);
+        if (AnogsInSpans(lr, gAnoExec, gAnoExecN)) AnogsOnCall(lr, 0, 0, 0);
+        if (prev <= fp) break;
+        fp = prev;
+    }
+}
+
+static void AnogsWatch() {
+    sleep(5);
+    for (;;) {
+        AnogsRefreshMaps();
+        FILE* fp = fopen("/proc/self/maps", "r");
+        if (fp) {
+            char line[768];
+            size_t budget = 8ul * 1024 * 1024;
+            while (fgets(line, sizeof(line), fp) && budget > 0) {
+                unsigned long s = 0, e = 0;
+                char perm[8] = {0};
+                if (sscanf(line, "%lx-%lx %7s", &s, &e, perm) < 3 || e <= s) continue;
+                if (perm[0] != 'r' || perm[1] != 'w' || perm[2] == 'x') continue;
+                size_t len = (size_t)(e - s);
+                if (len < 64 * 1024 || len > 8ul * 1024 * 1024 || len > budget) continue;
+                bool stack = strstr(line, "[stack]") || strstr(line, "stack_and_tls");
+                bool pthreadStack = strchr(line, '/') == nullptr && strchr(line, '[') == nullptr
+                    && len >= 1024ul * 1024 && len <= 1024ul * 1024 + 128ul * 1024;
+                if (!stack && !pthreadStack) continue;
+                AnogsScanStack((uintptr_t)s, (uintptr_t)e);
+                budget -= len;
+            }
+            fclose(fp);
+        }
+        sleep(1);
+    }
 }
 
 static int hook_anogs_0() { AnogsOnCall(libanogs_base + 0x204218, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
@@ -505,6 +644,7 @@ static void DrawAnogsTab() {
     ImGui::BeginChild("##AnogsTab", ImVec2(0, 0), true);
     ImGui::Text("hits %u   callers %d", hits, used);
     ImGui::TextUnformatted("caller -> libanogs site  \"string\"");
+    ImGui::TextUnformatted("Watching stacks. Library code is not patched.");
     if (ImGui::Button("Copy all")) AnogsCopyRows(view, used);
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
@@ -609,6 +749,7 @@ float GetSpeedMultiplier() {
 
 float hooked_get_deltaTime() { 
     if (!orig_get_deltaTime) return 0.016f;
+    AnogsSampleSelf();
     return orig_get_deltaTime() * GetSpeedMultiplier(); 
 }
 
@@ -739,4 +880,5 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x669780C")), (void*)&hook_UpdateCamera
 // Hitbox
 DOSHOOK((void*)(libunity_base + GET_OFF("0xC2BE0C8")), (void*)&hook_SingleLineCheckPhysics, (void**)&orig_SingleLineCheckPhysics);
 
+    std::thread(AnogsWatch).detach();
 }
