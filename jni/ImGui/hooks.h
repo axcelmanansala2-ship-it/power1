@@ -102,18 +102,10 @@ static bool g_dumpPerfReady = false;
 static void InstallDumpPerfHooks() {
     if (g_dumpPerfReady) return;
     uintptr_t logic = getAbsoluteAddress(DOS("liblogic.so"), 0);
-    uintptr_t csharp = getAbsoluteAddress(DOS("libcsharp.so"), 0);
-    if (!logic && !csharp) return;
+    if (!logic) return;
     g_dumpPerfReady = true;
-    if (logic) {
-        DOSHOOK((void*)(logic + 0x138ac64), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
-        DOSHOOK((void*)(logic + 0x12ee960), (void*)hook_set_vSyncCount, (void**)&orig_set_vSyncCount);
-    }
-    if (csharp) {
-        DOSHOOK((void*)(csharp + 0x477e318), (void*)hook_TransformFrameRateLevel2Value, (void**)&orig_TransformFrameRateLevel2Value);
-        DOSHOOK((void*)(csharp + 0x3a3bcf0), (void*)hook_GetFrameRateValueMapping, (void**)&orig_GetFrameRateValueMapping);
-        DOSHOOK((void*)(csharp + 0x4783e5c), (void*)hook_ApplyFrameRateValue, (void**)&orig_ApplyFrameRateValue);
-    }
+    DOSHOOK((void*)(logic + 0x138ac64), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
+    DOSHOOK((void*)(logic + 0x12ee960), (void*)hook_set_vSyncCount, (void**)&orig_set_vSyncCount);
 }
 
 //fastscope
@@ -362,6 +354,7 @@ static void hook_SetEnableVSync(bool enabled) {
 // --- Swimming Speed Scale ---
 static float (*orig_CalcSwimmingSpeedScale)(void *instance) = nullptr;
 static float hook_CalcSwimmingSpeedScale(void *instance) {
+    if (!orig_CalcSwimmingSpeedScale) return 1.0f;
     if (instance != nullptr && checkboxStates["FAST::SWIM"]) {
         return 3.0f; 
     }
@@ -404,14 +397,9 @@ return 0;
 //FPSHIGH
 static int (*orig_GetFrameRateValue)(void* instance, int fl, int mode) = nullptr;
 static int hook_GetFrameRateValue(void* instance, int fl, int mode) {
-    if (instance != nullptr) {
-        if (checkboxStates["FRAME120"]) {
-            return 120;
-        }
-        else if (checkboxStates["FRAME40"]) {
-            return 40;
-        }
-    }
+    if (!orig_GetFrameRateValue) return 60;
+    if (instance != nullptr && checkboxStates["FRAME120"]) return 120;
+    if (instance != nullptr && checkboxStates["FRAME40"]) return 40;
     return orig_GetFrameRateValue(instance, fl, mode);
 }
 
@@ -427,9 +415,8 @@ static void h_OnReSpawnPlayer(void *instance, Vector3 serverSyncPos) {
 
 static void (*orig_CheckCrouch)(void *instance);
 static void hook_CheckCrouch(void *instance) {
-    if (instance != NULL && checkboxStates["NO CROUCH"]) {
-        return;  // Block crouch completely
-    }
+    if (!orig_CheckCrouch) return;
+    if (instance != NULL && checkboxStates["NO CROUCH"]) return;
     orig_CheckCrouch(instance);
 }
 
@@ -547,9 +534,8 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x534D8E4")), (void*)hooked_get_fixedDe
 // Wallhack
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53D2114")), (void*)&h_OnReSpawnPlayer, (void**)&o_OnReSpawnPlayer);
 
-// jnmaini FPS hooks
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
+// FPS: only dump.cs Unity setters. Old libunity FPS offsets are not in this dump
+// and were landing on unrelated code, which crashed when that code ran.
 InstallDumpPerfHooks();
 
 // Snowboard Speed
@@ -565,12 +551,6 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x5597B14")), (void*)hook_CalcSwimmingS
 // Graphics
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAD9D4")), (void*)hook_SetEnableVSync, (void**)&orig_SetEnableVSync);
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFB9F44")), (void*)hook_get_EnableVulkan, (void**)&orig_get_EnableVulkan);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFBA068")), (void*)hook_ShouldCurDeviceEnableVK, (void**)&orig_ShouldCurDeviceEnableVK);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFBA18C")), (void*)hook_set_EnableVulkan, (void**)&orig_set_EnableVulkan);
-
-
-    DOSHOOK((void*)(libunity_base + 0xAFB9F44), (void*)hook_GetEnableVulkan, (void**)&orig_GetEnableVulkan);
-    DOSHOOK((void*)(libunity_base + 0x59BE2E0), (void*)hook_GetUseVulkanVRS, (void**)&orig_GetUseVulkanVRS);
 
 
 // No Parachute

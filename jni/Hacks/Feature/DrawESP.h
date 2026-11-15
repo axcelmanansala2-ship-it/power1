@@ -295,12 +295,15 @@ void drawESP__Player(ImDrawList *draw) {
     List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
     if (!Tools::IsPtrValid(EnemyPawns) || EnemyPawns->getSize() == 0) return;
     
+    int pawnCount = EnemyPawns->getSize();
+    if (pawnCount <= 0 || pawnCount > 100) return;
+    
     Pawn **pawns = (Pawn **)EnemyPawns->getItems();
-    if (!pawns) return;
+    if (!Tools::IsPtrValid(pawns)) return;
     
     int totalEnemies = 0, totalBots = 0;
     
-    for (int i = 0; i < EnemyPawns->getSize(); i++) {
+    for (int i = 0; i < pawnCount; i++) {
         Pawn *pawn = pawns[i];
         if (!Tools::IsPtrValid(pawn)) continue;
         if (!pawn->m_IsAlive()) continue;
