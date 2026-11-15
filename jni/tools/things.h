@@ -74,40 +74,34 @@ bool CustomSliderFloat(const char* label, float* v, float v_min, float v_max, co
 #define SLIDER(label, v, v_min, v_max, ...) CustomSliderFloat(label, v, v_min, v_max, ##__VA_ARGS__)
 //CUSTOM SLIDER END.
 
-void DrawMacOSHeaderButtons()
+int DrawMacOSHeaderButtons()
 {
     ImDrawList* draw = ImGui::GetWindowDrawList();
     ImVec2 winPos = ImGui::GetWindowPos();
-    ImVec2 winPad = ImGui::GetStyle().WindowPadding;
+    ImVec2 winSize = ImGui::GetWindowSize();
+    const float btn = 46.0f;
+    const float gap = 8.0f;
+    const float top = winPos.y + 10.0f;
+    const float xClose = winPos.x + winSize.x - btn - 12.0f;
+    const float xMin = xClose - btn - gap;
 
-    float radius = 6.5f;
-    float spacing = 18.0f;
+    auto paint = [&](const char* id, ImVec2 pos, ImU32 fill, const char* glyph) -> bool {
+        ImGui::SetCursorScreenPos(pos);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.16f));
+        bool hit = ImGui::Button(id, ImVec2(btn, btn));
+        ImGui::PopStyleColor(3);
+        draw->AddRectFilled(pos, ImVec2(pos.x + btn, pos.y + btn), fill, 12.0f);
+        ImVec2 ts = ImGui::CalcTextSize(glyph);
+        draw->AddText(ImVec2(pos.x + (btn - ts.x) * 0.5f, pos.y + (btn - ts.y) * 0.5f), IM_COL32(20, 20, 20, 255), glyph);
+        return hit;
+    };
 
-    ImVec2 circlePos = ImVec2(
-        winPos.x + winPad.x + radius + 2,
-        winPos.y + winPad.y + radius + 2
-    );
-
-    ImU32 colRed   = IM_COL32(255, 92, 85, 255);
-    ImU32 colYellow= IM_COL32(255, 189, 47, 255);
-    ImU32 colGreen = IM_COL32(40, 201, 64, 255);
-
-    draw->AddCircleFilled(circlePos, radius, colRed);
-    draw->AddCircleFilled(ImVec2(circlePos.x + spacing, circlePos.y), radius, colYellow);
-    draw->AddCircleFilled(ImVec2(circlePos.x + spacing * 2, circlePos.y), radius, colGreen);
-
-    // Optional invisible buttons for clicks
-    ImGui::SetCursorScreenPos(ImVec2(circlePos.x - radius, circlePos.y - radius));
-    if (ImGui::InvisibleButton("closeBtn", ImVec2(radius * 2, radius * 2)))
-        ; // Action here
-
-    ImGui::SetCursorScreenPos(ImVec2(circlePos.x + spacing - radius, circlePos.y - radius));
-    if (ImGui::InvisibleButton("minBtn", ImVec2(radius * 2, radius * 2)))
-        ; // Action here
-
-    ImGui::SetCursorScreenPos(ImVec2(circlePos.x + spacing * 2 - radius, circlePos.y - radius));
-    if (ImGui::InvisibleButton("maxBtn", ImVec2(radius * 2, radius * 2)))
-        ; // Action here
+    int action = 0;
+    if (paint("##min_menu", ImVec2(xMin, top), IM_COL32(255, 196, 64, 255), "-")) action = 1;
+    if (paint("##close_menu", ImVec2(xClose, top), IM_COL32(255, 92, 85, 255), "X")) action = 2;
+    return action;
 }
 
 std::map<std::string, ImVec4> colorStates = {

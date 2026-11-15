@@ -309,7 +309,7 @@ float uiScale = sh / 1080.0f;
 if (uiScale < 0.90f) uiScale = 0.90f;
 if (uiScale > 1.55f) uiScale = 1.55f;
 ImVec2 center2 = ImGui::GetMainViewport()->GetCenter();
-ImGui::SetNextWindowPos(center2, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+ImGui::SetNextWindowPos(center2, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 ImGui::SetNextWindowSize(ImVec2(menuW, menuH), ImGuiCond_Always);
 ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 18.0f);
 ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 12.0f));
@@ -320,7 +320,7 @@ ImGui::PushFont(Crozn);
 if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize))
 {
     ImGui::SetWindowFontScale(uiScale);
-    DrawMacOSHeaderButtons();
+    if (DrawMacOSHeaderButtons()) isToggled = false;
     ImGui::Dummy(ImVec2(0, 10));
     
     ImGui::BeginChild("##ScrollablePage", ImVec2(-1, -1), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
