@@ -2,8 +2,6 @@
 
 #include <cstdint>
 #include <string>
-//#include "ImGui/telelog.h"
-
 typedef unsigned long long ulong;
 
 uintptr_t get_off(const char* str) {
