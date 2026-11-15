@@ -101,10 +101,10 @@ static bool SkinPtrOk(void* p) {
     return p && Tools::IsPtrValid(p);
 }
 
-static int SkinListCount(void* list) {
+static int SkinListCount(void* list, int maxN) {
     if (!SkinPtrOk(list)) return 0;
     int n = *reinterpret_cast<int*>((uintptr_t)list + 0x18);
-    if (n < 1 || n > 48) return 0;
+    if (n < 1 || n > maxN) return 0;
     return n;
 }
 
@@ -117,93 +117,101 @@ static void* SkinListAt(void* list, int i) {
     return SkinPtrOk(elem) ? elem : nullptr;
 }
 
-static int gHeldWeaponId = 0;
-static uint32_t gHeldBaseId = 0;
-static uint32_t gHeldSkinId = 0;
-static int gHeldDefaultSkin = 0;
-static void* gHeldSkinInfo = nullptr;
-static int gHeldQueryWeapon = -1;
-static int gSkinRetry = 0;
-static uint32_t gHeldSkinChoices[48];
-static int gHeldSkinCount = 0;
+static void* gSkinArr = nullptr;
+static int gSkinTotal = 0;
+static int gSkinIndex = 0;
+static int gSkinSaved = 0;
+static int gSkinWait = 0;
+static bool gSkinDone = false;
+static FILE* gSkinOut = nullptr;
+static char gSkinPath[128] = "";
 
-static void RefreshHeldWeaponSkins() {
-    void* weapon = nullptr;
-    auto local = FastFuncs::Gameplay_get_LocalPawn_Fast;
-    auto weaponFn = FastFuncs::Pawn_get_CurrentWeapon_Fast;
-    if (local && weaponFn) {
-        Pawn* pawn = local();
-        if (SkinPtrOk(pawn)) {
-            void* held = weaponFn(pawn);
-            if (SkinPtrOk(held)) weapon = held;
+static void LobbySkinDump() {
+    if (gSkinDone) return;
+    if (gMatchLive.load()) {
+        if (gSkinOut) {
+            fclose(gSkinOut);
+            gSkinOut = nullptr;
         }
+        return;
     }
-    if (!weapon && fn_CurrentWeapon) {
-        void* held = fn_CurrentWeapon();
-        if (SkinPtrOk(held)) weapon = held;
-    }
-    if (!weapon || !fn_GetItemID) return;
+    if (!fn_GetWeaponArray || !fn_GetConceptList || !fn_GetCamosByConcept) return;
 
-    int itemId = fn_GetItemID(weapon);
-    if (itemId <= 0) return;
-    gHeldWeaponId = itemId;
-
-    gHeldSkinInfo = nullptr;
-    gHeldSkinId = 0;
-    for (int pass = 0; pass < 2 && !gHeldSkinInfo; ++pass) {
-        uintptr_t begin = pass == 0 ? 0x98 : 0x10;
-        uintptr_t end = pass == 0 ? 0x98 : 0x180;
-        for (uintptr_t off = begin; off <= end; off += sizeof(void*)) {
-            void* info = *reinterpret_cast<void**>((uintptr_t)weapon + off);
-            if (!SkinPtrOk(info) || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)info + 0x38))) continue;
-            int id = *reinterpret_cast<int*>((uintptr_t)info + 0x14);
-            if (id != itemId) continue;
-            gHeldSkinInfo = info;
-            gHeldSkinId = *reinterpret_cast<uint32_t*>((uintptr_t)info + 0x34);
-            gHeldDefaultSkin = *reinterpret_cast<int*>((uintptr_t)info + 0x38);
+    if (!gSkinArr) {
+        if (++gSkinWait < 120) return;
+        gSkinWait = 0;
+        void* arr = fn_GetWeaponArray();
+        if (!SkinPtrOk(arr)) return;
+        int n = *reinterpret_cast<int*>((uintptr_t)arr + 0x18);
+        if (n < 1 || n > 8000) return;
+        const char* paths[] = {
+            "/sdcard/codm_skins.txt",
+            "/storage/emulated/0/codm_skins.txt",
+            "/sdcard/Android/data/com.garena.game.codm/files/codm_skins.txt"
+        };
+        for (const char* path : paths) {
+            gSkinOut = fopen(path, "w");
+            if (!gSkinOut) continue;
+            snprintf(gSkinPath, sizeof(gSkinPath), "%s", path);
             break;
         }
-    }
-    if (gHeldSkinId == 0 && fn_GetCurSkinID) gHeldSkinId = fn_GetCurSkinID(weapon);
-
-    bool rebuild = itemId != gHeldQueryWeapon;
-    if (!rebuild && gHeldSkinCount == 0) {
-        if (++gSkinRetry < 45) return;
-        gSkinRetry = 0;
-        rebuild = true;
-    }
-    if (!rebuild) return;
-    gSkinRetry = 0;
-    gHeldQueryWeapon = itemId;
-    gHeldSkinCount = 0;
-    gHeldBaseId = (uint32_t)itemId;
-
-    if (fn_GetBaseWeaponID) {
-        uint32_t resolved = fn_GetBaseWeaponID((uint32_t)itemId);
-        if (resolved != 0) gHeldBaseId = resolved;
-    }
-    if (!fn_GetConceptList || !fn_GetCamosByConcept) return;
-
-    void* concepts = fn_GetConceptList(gHeldBaseId);
-    int conceptCount = SkinListCount(concepts);
-    for (int c = 0; c < conceptCount && gHeldSkinCount < 48; ++c) {
-        void* concept = SkinListAt(concepts, c);
-        if (!concept) continue;
-        uint32_t conceptId = *reinterpret_cast<uint32_t*>((uintptr_t)concept + 0x18);
-        if (conceptId == 0) continue;
-        void* camos = fn_GetCamosByConcept(conceptId);
-        int camoCount = SkinListCount(camos);
-        for (int k = 0; k < camoCount && gHeldSkinCount < 48; ++k) {
-            void* camo = SkinListAt(camos, k);
-            if (!camo) continue;
-            uint32_t skinId = *reinterpret_cast<uint32_t*>((uintptr_t)camo + 0x18);
-            if (skinId == 0) continue;
-            bool seen = false;
-            for (int s = 0; s < gHeldSkinCount; ++s) {
-                if (gHeldSkinChoices[s] == skinId) { seen = true; break; }
-            }
-            if (!seen) gHeldSkinChoices[gHeldSkinCount++] = skinId;
+        if (!gSkinOut) {
+            gSkinDone = true;
+            snprintf(gSkinPath, sizeof(gSkinPath), "%s", "sdcard write failed");
+            return;
         }
+        fprintf(gSkinOut, "weapon base default skins\n");
+        gSkinArr = arr;
+        gSkinTotal = n;
+        gSkinIndex = 0;
+    }
+
+    static uint32_t seenBase[2048];
+    static int seenCount = 0;
+    int end = gSkinIndex + 8;
+    if (end > gSkinTotal) end = gSkinTotal;
+    for (int i = gSkinIndex; i < end; ++i) {
+        void* conf = *reinterpret_cast<void**>((uintptr_t)gSkinArr + 0x20 + (uintptr_t)i * sizeof(void*));
+        if (!SkinPtrOk(conf) || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)conf + 0x40))) continue;
+        uint32_t id = *reinterpret_cast<uint32_t*>((uintptr_t)conf + 0x40);
+        uint32_t base = *reinterpret_cast<uint32_t*>((uintptr_t)conf + 0x34);
+        int defSkin = *reinterpret_cast<int*>((uintptr_t)conf + 0x38);
+        if (id == 0) continue;
+        if (base == 0) base = id;
+        fprintf(gSkinOut, "%u %u %d", id, base, defSkin);
+        bool known = false;
+        for (int s = 0; s < seenCount; ++s) {
+            if (seenBase[s] == base) { known = true; break; }
+        }
+        if (!known && seenCount < 2048) {
+            seenBase[seenCount++] = base;
+            void* concepts = fn_GetConceptList(base);
+            int conceptCount = SkinListCount(concepts, 32);
+            for (int c = 0; c < conceptCount; ++c) {
+                void* concept = SkinListAt(concepts, c);
+                if (!concept || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)concept + 0x18))) continue;
+                uint32_t conceptId = *reinterpret_cast<uint32_t*>((uintptr_t)concept + 0x18);
+                if (conceptId == 0) continue;
+                void* camos = fn_GetCamosByConcept(conceptId);
+                int camoCount = SkinListCount(camos, 64);
+                for (int k = 0; k < camoCount; ++k) {
+                    void* camo = SkinListAt(camos, k);
+                    if (!camo || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)camo + 0x18))) continue;
+                    uint32_t skinId = *reinterpret_cast<uint32_t*>((uintptr_t)camo + 0x18);
+                    if (skinId == 0) continue;
+                    fprintf(gSkinOut, " %u", skinId);
+                }
+            }
+        }
+        fputc('\n', gSkinOut);
+        gSkinSaved++;
+    }
+    gSkinIndex = end;
+    fflush(gSkinOut);
+    if (gSkinIndex >= gSkinTotal) {
+        fclose(gSkinOut);
+        gSkinOut = nullptr;
+        gSkinDone = true;
     }
 }
 
@@ -215,6 +223,7 @@ EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
 eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
 eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
 AccelForce120(dpy);
+LobbySkinDump();
 if (!g_Initialized) {
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -654,35 +663,17 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
 
                 ImGui::Spacing();
                 ImGui::BeginGroupPanel("Skin ID", ImVec2(-1, 0));
-                RefreshHeldWeaponSkins();
-                g_widgets.checkbox("Swap default skin", &checkboxStates["SKINSWAP"]);
-                ImGui::BeginChild("##HeldSkins", ImVec2(0, 180), true);
-                if (gHeldWeaponId <= 0) {
-                    ImGui::TextUnformatted("Hold a weapon");
+                if (gSkinDone) {
+                    ImGui::Text("Saved %d", gSkinSaved);
+                    ImGui::TextWrapped("%s", gSkinPath);
+                } else if (gMatchLive.load()) {
+                    ImGui::TextUnformatted("Stopped. Stay in the lobby to save skins.");
+                } else if (gSkinTotal > 0) {
+                    ImGui::Text("Saving %d / %d", gSkinIndex, gSkinTotal);
+                    ImGui::TextWrapped("%s", gSkinPath);
                 } else {
-                    ImGui::Text("Weapon %d", gHeldWeaponId);
-                    ImGui::Text("Skin %u", gHeldSkinId);
-                    ImGui::Text("Default %d", gHeldDefaultSkin);
-                    if (gHeldSkinCount == 0) {
-                        ImGui::TextUnformatted("No skins for this weapon");
-                    } else {
-                        for (int i = 0; i < gHeldSkinCount; ++i) {
-                            char label[32];
-                            snprintf(label, sizeof(label), "%u", gHeldSkinChoices[i]);
-                            if (ImGui::Selectable(label, gWeaponSkinId == gHeldSkinChoices[i])) {
-                                gWeaponSkinId = gHeldSkinChoices[i];
-                                gHeldSkinId = gWeaponSkinId;
-                                gHeldDefaultSkin = (int)gWeaponSkinId;
-                                if (SkinPtrOk(gHeldSkinInfo)) {
-                                    *reinterpret_cast<uint32_t*>((uintptr_t)gHeldSkinInfo + 0x34) = gWeaponSkinId;
-                                    *reinterpret_cast<int*>((uintptr_t)gHeldSkinInfo + 0x38) = gHeldDefaultSkin;
-                                }
-                            }
-                        }
-                    }
+                    ImGui::TextUnformatted("Lobby: searching skins...");
                 }
-                ImGui::EndChild();
-                ImGui::InputScalar("Suit skin", ImGuiDataType_U32, &gSuitSkinId, nullptr, nullptr, "%u");
                 ImGui::EndGroupPanel();
                 
                 ImGui::Spacing();
