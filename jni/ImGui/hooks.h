@@ -365,8 +365,6 @@ static int gAnogsUsed = 0;
 static uint32_t gAnogsSlot[4096];
 static std::atomic<uint32_t> gAnogsHits{0};
 static std::atomic<int> gAnogsLock{0};
-static std::atomic<int> gAnogsArmed{0};
-static std::atomic<int> gAnogsFound{0};
 static uintptr_t gAnogsSelf = 0;
 struct AnogsSpan { uintptr_t a, b; };
 static AnogsSpan gReadSpans[16];
