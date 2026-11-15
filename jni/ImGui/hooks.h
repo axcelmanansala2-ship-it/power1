@@ -867,10 +867,10 @@ static int hook_anogs_0() { AnogsOnCall(libanogs_base + 0x204218, (uintptr_t)__b
 static int hook_anogs_1() { AnogsOnCall(libanogs_base + 0x45B334, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
 static int hook_anogs_2() { AnogsOnCall(libanogs_base + 0x44A714, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
 static int hook_anogs_3() { AnogsOnCall(libanogs_base + 0x48F964, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-static int hook_anogs_4() { AnogsOnCall(libanogs_base + 0x2F7DA4, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-static int hook_anogs_5() { AnogsOnCall(libanogs_base + 0x446140, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-static int hook_anogs_6() { AnogsOnCall(libanogs_base + 0x42560C, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
-static int hook_anogs_7() { AnogsOnCall(libanogs_base + 0x359100, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+//static int hook_anogs_4() { AnogsOnCall(libanogs_base + 0x2F7DA4, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+//static int hook_anogs_5() { AnogsOnCall(libanogs_base + 0x446140, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+//static int hook_anogs_6() { AnogsOnCall(libanogs_base + 0x42560C, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
+//static int hook_anogs_7() { AnogsOnCall(libanogs_base + 0x359100, (uintptr_t)__builtin_return_address(0), 0, 0); return 0; }
 
 static void AnogsCopyRows(const AnogsRow* view, int used) {
     std::string blob;
