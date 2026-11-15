@@ -7,6 +7,9 @@
 #include <atomic>
 #include <thread>
 #include <unistd.h>
+#include <dirent.h>
+#include <signal.h>
+#include <sys/ucontext.h>
 #include <sys/uio.h>
 #include <sys/syscall.h>
 #include <dlfcn.h>
@@ -360,9 +363,9 @@ struct AnogsRow {
     char line[200];
 };
 
-static AnogsRow gAnogsRows[1024];
+static AnogsRow gAnogsRows[2048];
 static int gAnogsUsed = 0;
-static uint32_t gAnogsSlot[4096];
+static uint32_t gAnogsSlot[8192];
 static std::atomic<uint32_t> gAnogsHits{0};
 static std::atomic<int> gAnogsLock{0};
 static uintptr_t gAnogsSelf = 0;
@@ -426,17 +429,17 @@ static void AnogsOnCall(uintptr_t site, uintptr_t caller, uintptr_t arg0, uintpt
         if (dladdr((void*)&AnogsOnCall, &info) && info.dli_fbase) gAnogsSelf = (uintptr_t)info.dli_fbase;
     }
     uint32_t siteOff = (libanogs_base && site >= libanogs_base) ? (uint32_t)(site - libanogs_base) : (uint32_t)site;
-    uint32_t h = (siteOff ^ (uint32_t)(caller >> 2)) & 4095u;
+    uint32_t h = (siteOff ^ (uint32_t)(caller >> 2)) & 8191u;
     bool locked = false;
     for (int spin = 0; spin < 8; ++spin) {
         if (AnogsLock()) { locked = true; break; }
     }
     if (!locked) return;
-    for (int p = 0; p < 8; ++p) {
-        uint32_t slot = (h + (uint32_t)p) & 4095u;
+    for (int p = 0; p < 16; ++p) {
+        uint32_t slot = (h + (uint32_t)p) & 8191u;
         uint32_t mark = gAnogsSlot[slot];
         if (mark == 0) {
-            if (gAnogsUsed >= 1024) break;
+            if (gAnogsUsed >= 2048) break;
             AnogsRow& row = gAnogsRows[gAnogsUsed];
             row.site = siteOff;
             row.caller = caller;
@@ -522,6 +525,175 @@ static void AnogsRefreshMaps() {
     gReadN = readN;
 }
 
+struct AnogsPub {
+    AnogsSpan s[8];
+    int n;
+};
+static AnogsPub gAnogsPub[2];
+static std::atomic<int> gAnogsPubIdx{0};
+
+struct AnogsSnap {
+    uintptr_t site;
+    uintptr_t caller;
+    uintptr_t a0;
+    uintptr_t a1;
+    uintptr_t fp;
+};
+static AnogsSnap gAnogsSnap[1024];
+static std::atomic<uint32_t> gAnogsSnapSeq[1024];
+static std::atomic<uint32_t> gAnogsSnapW{0};
+static uint32_t gAnogsSnapR = 0;
+static struct sigaction gAnogsOldSig;
+static std::atomic<int> gAnogsSigReady{0};
+
+struct AnogsFunc {
+    uintptr_t lo;
+    uintptr_t hi;
+    uintptr_t entry;
+};
+static AnogsFunc gAnogsFuncs[4096];
+static int gAnogsFuncN = 0;
+
+static void AnogsPublishExec() {
+    int cur = gAnogsPubIdx.load(std::memory_order_relaxed) & 1;
+    int next = cur ^ 1;
+    int n = gAnoExecN;
+    if (n > 8) n = 8;
+    gAnogsPub[next].n = n;
+    for (int i = 0; i < n; ++i) gAnogsPub[next].s[i] = gAnoExec[i];
+    gAnogsPubIdx.store(next, std::memory_order_release);
+}
+
+static bool AnogsSigHit(uintptr_t pc) {
+    int idx = gAnogsPubIdx.load(std::memory_order_acquire);
+    const AnogsPub* pub = &gAnogsPub[idx & 1];
+    for (int i = 0; i < pub->n; ++i) {
+        if (pc >= pub->s[i].a && pc < pub->s[i].b) return true;
+    }
+    return false;
+}
+
+static void AnogsPushSnap(uintptr_t site, uintptr_t caller, uintptr_t a0, uintptr_t a1, uintptr_t fp) {
+    uint32_t i = gAnogsSnapW.fetch_add(1, std::memory_order_relaxed) & 1023u;
+    gAnogsSnapSeq[i].store(1, std::memory_order_relaxed);
+    gAnogsSnap[i].site = site;
+    gAnogsSnap[i].caller = caller;
+    gAnogsSnap[i].a0 = a0;
+    gAnogsSnap[i].a1 = a1;
+    gAnogsSnap[i].fp = fp;
+    gAnogsSnapSeq[i].store(2, std::memory_order_release);
+}
+
+static void AnogsOnSig(int sig, siginfo_t* info, void* ctx) {
+#if defined(__aarch64__)
+    ucontext_t* uc = (ucontext_t*)ctx;
+    if (uc) {
+        uintptr_t pc = (uintptr_t)uc->uc_mcontext.pc;
+        if (AnogsSigHit(pc)) {
+            AnogsPushSnap(pc,
+                (uintptr_t)uc->uc_mcontext.regs[30],
+                (uintptr_t)uc->uc_mcontext.regs[0],
+                (uintptr_t)uc->uc_mcontext.regs[1],
+                (uintptr_t)uc->uc_mcontext.regs[29]);
+        }
+    }
+#else
+    (void)ctx;
+#endif
+    if (gAnogsOldSig.sa_flags & SA_SIGINFO) {
+        if (gAnogsOldSig.sa_sigaction) gAnogsOldSig.sa_sigaction(sig, info, ctx);
+    } else if (gAnogsOldSig.sa_handler && gAnogsOldSig.sa_handler != SIG_DFL && gAnogsOldSig.sa_handler != SIG_IGN) {
+        gAnogsOldSig.sa_handler(sig);
+    }
+}
+
+static void AnogsInstallSig() {
+    int expected = 0;
+    if (!gAnogsSigReady.compare_exchange_strong(expected, 1)) return;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    memset(&gAnogsOldSig, 0, sizeof(gAnogsOldSig));
+    sa.sa_sigaction = AnogsOnSig;
+    sa.sa_flags = SA_SIGINFO | SA_RESTART;
+    sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, SIGWINCH);
+    if (sigaction(SIGWINCH, &sa, &gAnogsOldSig) != 0) gAnogsSigReady.store(0);
+}
+
+static uintptr_t AnogsEntry(uintptr_t pc) {
+    if (gAnoExecN == 0 || !AnogsInSpans(pc, gAnoExec, gAnoExecN)) return pc & ~(uintptr_t)3;
+    uintptr_t aligned = pc & ~(uintptr_t)3;
+    for (int i = 0; i < gAnogsFuncN; ++i) {
+        if (aligned >= gAnogsFuncs[i].lo && aligned < gAnogsFuncs[i].hi) return gAnogsFuncs[i].entry;
+    }
+    uintptr_t spanA = 0, spanB = 0;
+    for (int i = 0; i < gAnoExecN; ++i) {
+        if (aligned >= gAnoExec[i].a && aligned < gAnoExec[i].b) {
+            spanA = gAnoExec[i].a;
+            spanB = gAnoExec[i].b;
+            break;
+        }
+    }
+    if (!spanB) return aligned;
+    uintptr_t win = aligned > 0x3000 ? aligned - 0x3000 : spanA;
+    if (win < spanA) win = spanA;
+    win &= ~(uintptr_t)3;
+    static uint8_t buf[0x3008];
+    size_t n = (size_t)(aligned + 4 - win);
+    if (n > sizeof(buf)) {
+        win = (aligned + 4 - sizeof(buf)) & ~(uintptr_t)3;
+        if (win < spanA) win = spanA;
+        n = (size_t)(aligned + 4 - win);
+        if (n > sizeof(buf)) n = sizeof(buf);
+    }
+    n &= ~(size_t)3;
+    if (n < 4 || !AnogsVmRead(buf, win, n)) return aligned;
+    uintptr_t entry = aligned;
+    for (uintptr_t a = aligned; ; a -= 4) {
+        uint32_t insn = 0;
+        memcpy(&insn, buf + (size_t)(a - win), 4);
+        if ((insn & 0xFFC07FFFu) == 0xA9807BFDu || (insn & 0xFFC07FFFu) == 0xA9007BFDu) {
+            entry = a;
+            if (a >= win + 4) {
+                uint32_t prev = 0;
+                memcpy(&prev, buf + (size_t)(a - 4 - win), 4);
+                if (prev == 0xD503233Fu || prev == 0xD503245Fu) entry = a - 4;
+            }
+            break;
+        }
+        if (a <= win) break;
+    }
+    uintptr_t hi = entry + 4;
+    uintptr_t end = spanB < entry + 0x1800 ? spanB : entry + 0x1800;
+    static uint8_t fwd[0x1800];
+    size_t fn = (size_t)(end - entry) & ~(size_t)3;
+    if (fn >= 8 && fn <= sizeof(fwd) && AnogsVmRead(fwd, entry, fn)) {
+        hi = entry + fn;
+        for (size_t off = 4; off + 4 <= fn; off += 4) {
+            uint32_t insn = 0;
+            memcpy(&insn, fwd + off, 4);
+            if (insn == 0xD65F03C0u) {
+                hi = entry + off + 4;
+                break;
+            }
+        }
+    }
+    if (hi <= entry) hi = entry + 4;
+    if (gAnogsFuncN < 4096) {
+        gAnogsFuncs[gAnogsFuncN].lo = entry;
+        gAnogsFuncs[gAnogsFuncN].hi = hi;
+        gAnogsFuncs[gAnogsFuncN].entry = entry;
+        gAnogsFuncN++;
+    }
+    return entry;
+}
+
+static void AnogsNote(uintptr_t site, uintptr_t caller, uintptr_t a0, uintptr_t a1) {
+    if (!site || !AnogsInSpans(site, gAnoExec, gAnoExecN)) return;
+    if (caller && AnogsInSelf(caller)) caller = 0;
+    AnogsOnCall(AnogsEntry(site), caller, a0, a1);
+}
+
 static void AnogsScanStack(uintptr_t start, uintptr_t end) {
     if (end <= start || end - start > 8ul * 1024 * 1024 || gAnoExecN == 0) return;
     static uint8_t chunk[32 * 1024];
@@ -539,6 +711,7 @@ static void AnogsScanStack(uintptr_t start, uintptr_t end) {
             memcpy(&v, chunk + i, 8);
             if (!AnogsInSpans(v, gAnoExec, gAnoExecN)) continue;
             uintptr_t caller = 0;
+            uintptr_t inside = 0;
             uintptr_t text = 0;
             for (int d = -16; d <= 16; d += 8) {
                 if (d == 0) continue;
@@ -546,13 +719,108 @@ static void AnogsScanStack(uintptr_t start, uintptr_t end) {
                 if (d > 0 && i + (size_t)d + 8 > n) continue;
                 uintptr_t near = 0;
                 memcpy(&near, chunk + i + d, 8);
-                if (!caller && AnogsInSpans(near, gCodeSpans, gCodeN) && !AnogsInSpans(near, gAnoExec, gAnoExecN)) caller = near;
+                if (near != v && AnogsInSpans(near, gCodeSpans, gCodeN)) {
+                    if (!AnogsInSpans(near, gAnoExec, gAnoExecN)) {
+                        if (!caller) caller = near;
+                    } else if (!inside) {
+                        inside = near;
+                    }
+                }
                 if (!text && AnogsMapped(near)) text = near;
             }
-            AnogsOnCall(v, caller, text, 0);
+            if (!caller) caller = inside;
+            AnogsNote(v, caller, text, 0);
         }
         addr += n;
     }
+}
+
+static void AnogsWalkFp(uintptr_t fp, uintptr_t caller) {
+    for (int i = 0; i < 20; ++i) {
+        if (!fp || (fp & 7)) break;
+        uintptr_t words[2] = {0, 0};
+        if (!AnogsVmRead(words, fp, sizeof(words))) break;
+        uintptr_t prev = words[0];
+        uintptr_t lr = words[1];
+        if (AnogsInSpans(caller, gAnoExec, gAnoExecN)) AnogsNote(caller, lr, 0, 0);
+        if (!prev || prev <= fp || prev - fp > 0x40000) break;
+        caller = lr;
+        fp = prev;
+    }
+}
+
+static void AnogsDrain() {
+    uint32_t w = gAnogsSnapW.load(std::memory_order_acquire);
+    if (w - gAnogsSnapR > 1024u) gAnogsSnapR = w - 1024u;
+    while (gAnogsSnapR != w) {
+        uint32_t i = gAnogsSnapR & 1023u;
+        if (gAnogsSnapSeq[i].load(std::memory_order_acquire) != 2) break;
+        AnogsSnap snap = gAnogsSnap[i];
+        gAnogsSnapSeq[i].store(0, std::memory_order_relaxed);
+        gAnogsSnapR++;
+        AnogsNote(snap.site, snap.caller, snap.a0, snap.a1);
+        AnogsWalkFp(snap.fp, snap.caller);
+        w = gAnogsSnapW.load(std::memory_order_acquire);
+    }
+}
+
+static int AnogsParseTid(const char* s) {
+    int n = 0;
+    if (!s || *s < '0' || *s > '9') return 0;
+    for (; *s >= '0' && *s <= '9'; ++s) n = n * 10 + (*s - '0');
+    return n;
+}
+
+static void AnogsPokeThreads() {
+    if (gAnogsSigReady.load(std::memory_order_acquire) != 1 || gAnoExecN == 0) return;
+    int self = (int)syscall(__NR_gettid);
+    DIR* d = opendir("/proc/self/task");
+    if (!d) return;
+    int sent = 0;
+    struct dirent* de;
+    while ((de = readdir(d)) != nullptr) {
+        int tid = AnogsParseTid(de->d_name);
+        if (tid <= 0 || tid == self) continue;
+        if (syscall(__NR_tgkill, (long)getpid(), (long)tid, SIGWINCH) == 0) sent++;
+        if (sent >= 64) break;
+    }
+    closedir(d);
+}
+
+static bool AnogsStackSize(size_t len) {
+    if (len < 128ul * 1024 || len > 1024ul * 1024 + 128ul * 1024) return false;
+    size_t p = 128ul * 1024;
+    for (;;) {
+        size_t lo = p > 64ul * 1024 ? p - 64ul * 1024 : p;
+        if (len >= lo && len <= p + 64ul * 1024) return true;
+        if (p >= 1024ul * 1024) break;
+        p *= 2;
+    }
+    return false;
+}
+
+static void AnogsScanStacks() {
+    FILE* fp = fopen("/proc/self/maps", "r");
+    if (!fp) return;
+    char line[768];
+    size_t budget = 32ul * 1024 * 1024;
+    while (fgets(line, sizeof(line), fp) && budget > 0) {
+        unsigned long s = 0, e = 0;
+        char perm[8] = {0};
+        if (sscanf(line, "%lx-%lx %7s", &s, &e, perm) < 3 || e <= s) continue;
+        if (perm[0] != 'r' || perm[1] != 'w' || perm[2] == 'x') continue;
+        size_t len = (size_t)(e - s);
+        if (len < 64 * 1024 || len > 8ul * 1024 * 1024 || len > budget) continue;
+        bool named = strstr(line, "[stack]") || strstr(line, "stack_and_tls") || strstr(line, "anon:stack");
+        bool heapish = strstr(line, "[heap]") || strstr(line, "malloc") || strstr(line, "scudo")
+            || strstr(line, "dalvik") || strstr(line, "jit") || strstr(line, "ashmem")
+            || strstr(line, "linker") || strstr(line, ".so");
+        bool anon = strchr(line, '/') == nullptr;
+        if (heapish || (!named && !(anon && AnogsStackSize(len)))) continue;
+        AnogsScanStack((uintptr_t)s, (uintptr_t)e);
+        budget -= len;
+    }
+    fclose(fp);
 }
 
 static void AnogsSampleSelf() {
@@ -574,29 +842,16 @@ static void AnogsSampleSelf() {
 
 static void AnogsWatch() {
     sleep(5);
+    AnogsInstallSig();
+    int phase = 0;
     for (;;) {
         AnogsRefreshMaps();
-        FILE* fp = fopen("/proc/self/maps", "r");
-        if (fp) {
-            char line[768];
-            size_t budget = 8ul * 1024 * 1024;
-            while (fgets(line, sizeof(line), fp) && budget > 0) {
-                unsigned long s = 0, e = 0;
-                char perm[8] = {0};
-                if (sscanf(line, "%lx-%lx %7s", &s, &e, perm) < 3 || e <= s) continue;
-                if (perm[0] != 'r' || perm[1] != 'w' || perm[2] == 'x') continue;
-                size_t len = (size_t)(e - s);
-                if (len < 64 * 1024 || len > 8ul * 1024 * 1024 || len > budget) continue;
-                bool stack = strstr(line, "[stack]") || strstr(line, "stack_and_tls");
-                bool pthreadStack = strchr(line, '/') == nullptr && strchr(line, '[') == nullptr
-                    && len >= 1024ul * 1024 && len <= 1024ul * 1024 + 128ul * 1024;
-                if (!stack && !pthreadStack) continue;
-                AnogsScanStack((uintptr_t)s, (uintptr_t)e);
-                budget -= len;
-            }
-            fclose(fp);
-        }
-        sleep(1);
+        AnogsPublishExec();
+        AnogsDrain();
+        if ((phase % 8) == 0) AnogsScanStacks();
+        AnogsPokeThreads();
+        phase++;
+        usleep(40 * 1000);
     }
 }
 
@@ -631,7 +886,7 @@ static void AnogsCopyRows(const AnogsRow* view, int used) {
 }
 
 static void DrawAnogsTab() {
-    static AnogsRow view[1024];
+    static AnogsRow view[2048];
     static int used = 0;
     static uint32_t hits = 0;
     if (AnogsLock()) {
@@ -643,8 +898,8 @@ static void DrawAnogsTab() {
 
     ImGui::BeginChild("##AnogsTab", ImVec2(0, 0), true);
     ImGui::Text("hits %u   callers %d", hits, used);
-    ImGui::TextUnformatted("caller -> libanogs site  \"string\"");
-    ImGui::TextUnformatted("Watching stacks. Library code is not patched.");
+    ImGui::TextUnformatted("caller -> libanogs function  \"string\"");
+    ImGui::TextUnformatted("Whole library, live. Only the original 4 patches are applied.");
     if (ImGui::Button("Copy all")) AnogsCopyRows(view, used);
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
