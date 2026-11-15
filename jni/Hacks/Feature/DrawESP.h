@@ -350,15 +350,11 @@ void drawESP__Player(ImDrawList *draw) {
                 float margin = dotRadius + 10.0f;
                 float dotX = std::max(margin, std::min(screen.x - margin, location.x));
                 float dotY = std::max(margin, std::min(screen.y - margin, location.y));
-                draw->AddCircleFilled({dotX, dotY}, dotRadius, IM_COL32(255, 255, 255, 255), 0);
+                draw->AddCircleFilled({dotX, dotY}, dotRadius, IM_COL32(190, 190, 190, 220), 0);
             }
         }
 
         if (checkboxStates["ESP LINE"] && pawn->m_IsAlive()) {
-            bool visible = pawn->isVisible();
-            bool bot = pawn->m_IsBot();
-            bool knocked = pawn->IsKnocked();
-            
             ImU32 lineColor = IM_COL32(180, 180, 180, 200);
             
             if (dropdownStates["#LINE_POS"] == 0) {
