@@ -2,24 +2,13 @@
 #include <cmath>       
 #include "ImGui/skeleton.h"
 #include <array>
+#include <cstdio>
 #pragma once
 std::unordered_map<std::string, int> dropdownStates;
 std::atomic<bool> MatchGame{false};
 
 void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text) {
-    ImU32 shadowColor = IM_COL32(0, 0, 0, 220);
-
-    // Thick shadow (8 directions)
-    draw->AddText(font, fontSize, ImVec2(pos.x + 1, pos.y), shadowColor, text);
-    draw->AddText(font, fontSize, ImVec2(pos.x - 1, pos.y), shadowColor, text);
-    draw->AddText(font, fontSize, ImVec2(pos.x, pos.y + 1), shadowColor, text);
-    draw->AddText(font, fontSize, ImVec2(pos.x, pos.y - 1), shadowColor, text);
-    draw->AddText(font, fontSize, ImVec2(pos.x + 1, pos.y + 1), shadowColor, text);
-    draw->AddText(font, fontSize, ImVec2(pos.x - 1, pos.y - 1), shadowColor, text);
-    draw->AddText(font, fontSize, ImVec2(pos.x + 1, pos.y - 1), shadowColor, text);
-    draw->AddText(font, fontSize, ImVec2(pos.x - 1, pos.y + 1), shadowColor, text);
-
-    // Main text
+    draw->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 200), text);
     draw->AddText(font, fontSize, pos, textColor, text);
 }
 
@@ -211,7 +200,7 @@ void Draw3DCircle(ImDrawList* draw, void* player_ptr, Vector3 pos, int screenHei
     Vector3 base = pos;
     base.y -= 0.05f;
     
-    float step = 2 * IM_PI / 16;
+    float step = 2 * IM_PI / 8;
     for (float a = 0; a < 2 * IM_PI; a += step) {
         Vector3 p1 = {
             base.x + cosf(a) * radius,
@@ -290,7 +279,7 @@ void drawESP__Player(ImDrawList *draw) {
 
     if (dropdownStates["#DIST"] == EAim::Crosshair && !checkboxStates["HAND::CAM"]) {
         float fovRadius = seekbarValues["FOV500"] * 1.0f;
-        draw->AddCircle(ImVec2(glWidth / 2, glHeight / 2), fovRadius, ImColor(255, 255, 255, 140), 128, 1.5f);
+        draw->AddCircle(ImVec2(glWidth / 2, glHeight / 2), fovRadius, ImColor(255, 255, 255, 140), 32, 1.5f);
     }
 
     BaseGame *get_MatchGame = GamePlay::get_MatchGame();
@@ -425,20 +414,23 @@ void drawESP__Player(ImDrawList *draw) {
         if (checkboxStates["ESP NAME"] && pawn->m_IsAlive()) {
             auto playerNameObj = pawn->get_PlayerName();
             const char* playerName = (playerNameObj && playerNameObj->CString()) ? playerNameObj->CString() : "UNKNOWN";
-            std::string strName = (pawn->m_IsBot() ? "[BOT] " : "[PLAYER] ") + std::string(playerName);
+            char nameBuf[96];
+            snprintf(nameBuf, sizeof(nameBuf), "%s%s", pawn->m_IsBot() ? "[BOT] " : "", playerName);
+            const char* strNameC = nameBuf;
             
             float boxHeight = abs(headPos_WS.y - rootPos_WS.y) * 1.1f;
             float boxWidth = boxHeight * 0.65f;
             ImVec2 vStart = { headPos_WS.x - (boxWidth / 2), glHeight - headPos_WS.y - (boxHeight * 0.1f) };
-            ImVec2 textSize = ImGui::CalcTextSize(strName.c_str());
+            ImVec2 textSize = ImGui::CalcTextSize(strNameC);
             ImVec2 textPos(vStart.x + (boxWidth / 2.0f) - (textSize.x / 2.0f), vStart.y - textSize.y - 2.0f);
-            AddTextWithShadow(draw, nullptr, 14.0f, textPos, IM_COL32(255, 255, 255, 255), strName.c_str());
+            AddTextWithShadow(draw, nullptr, 14.0f, textPos, IM_COL32(255, 255, 255, 255), strNameC);
         }
 
         if (checkboxStates["ESP PLAYER ID"] && pawn->m_IsAlive()) {
-            std::string strID = "ID: " + std::to_string((int)pawn->get_TeamSeatId());
+            char idBuf[24];
+            snprintf(idBuf, sizeof(idBuf), "ID %d", (int)pawn->get_TeamSeatId());
             ImVec2 textPos(headPos_WS.x - 64.0f, glHeight - headPos_WS.y - 24.0f);
-            AddTextWithShadow(draw, nullptr, 15.0f, textPos, IM_COL32(255, 255, 255, 255), strID.c_str());
+            AddTextWithShadow(draw, nullptr, 15.0f, textPos, IM_COL32(255, 255, 255, 255), idBuf);
         }
 
         if (checkboxStates["ESP HEALTH"] && pawn->m_IsAlive()) {
@@ -503,9 +495,10 @@ void drawESP__Player(ImDrawList *draw) {
         }
 
         if (checkboxStates["ESP DISTANCE"] && pawn->m_IsAlive()) {
-            std::string strDistance = std::to_string((int)distanceToMe) + " FT";
+            char distBuf[16];
+            snprintf(distBuf, sizeof(distBuf), "%dm", (int)distanceToMe);
             ImVec2 textPos(headPos_WS.x + 50.0f, glHeight - headPos_WS.y - 20.0f);
-            AddTextWithShadow(draw, nullptr, 13.0f, textPos, IM_COL32(255, 255, 255, 255), strDistance.c_str());
+            AddTextWithShadow(draw, nullptr, 13.0f, textPos, IM_COL32(255, 255, 255, 255), distBuf);
         }
     }
 

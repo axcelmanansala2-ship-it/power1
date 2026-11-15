@@ -95,9 +95,31 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 
 
 EGLBoolean (*orig_eglSwapBuffers)(...);
+static void AccelForce120(EGLDisplay dpy) {
+    if (!checkboxStates["FRAME120"]) return;
+    eglSwapInterval(dpy, 0);
+    static int tick = 0;
+    if ((tick++ % 15) != 0) return;
+    using SetInt = void (*)(int);
+    static SetInt setRate = nullptr;
+    static SetInt setVsync = nullptr;
+    static bool resolved = false;
+    if (!resolved) {
+        resolved = true;
+        uintptr_t logic = getAbsoluteAddress(DOS("liblogic.so"), 0);
+        if (logic) {
+            setRate = reinterpret_cast<SetInt>(logic + 0x138ac64);
+            setVsync = reinterpret_cast<SetInt>(logic + 0x12ee960);
+        }
+    }
+    if (setRate) setRate(120);
+    if (setVsync) setVsync(0);
+}
+
 EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
 eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
 eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
+AccelForce120(dpy);
 if (!g_Initialized) {
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -279,12 +301,25 @@ if (!checkboxStates["HAND::CAM"])
 if (isToggled)
 {
    
+const float sw = glWidth > 0 ? (float)glWidth : 1080.0f;
+const float sh = glHeight > 0 ? (float)glHeight : 1920.0f;
+const float menuW = sw * 0.94f;
+const float menuH = sh * 0.88f;
+float uiScale = sh / 1080.0f;
+if (uiScale < 0.90f) uiScale = 0.90f;
+if (uiScale > 1.55f) uiScale = 1.55f;
 ImVec2 center2 = ImGui::GetMainViewport()->GetCenter();
-ImGui::SetNextWindowPos(center2, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-ImGui::SetNextWindowSize(ImVec2(830, 500)); 
+ImGui::SetNextWindowPos(center2, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+ImGui::SetNextWindowSize(ImVec2(menuW, menuH), ImGuiCond_Always);
+ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 18.0f);
+ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 12.0f));
+ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.07f, 0.07f, 0.08f, 0.94f));
+ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.35f, 0.35f, 0.38f, 0.55f));
 ImGui::PushFont(Crozn);
-if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar))
+if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize))
 {
+    ImGui::SetWindowFontScale(uiScale);
     DrawMacOSHeaderButtons();
     ImGui::Dummy(ImVec2(0, 10));
     
@@ -293,11 +328,12 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar))
     static int tab = 1;
     
     ImGui::Columns(2);
-    ImGui::SetColumnOffset(1, 200); 
+    ImGui::SetColumnOffset(1, menuW * 0.24f); 
     
     {
-        float buttonWidth = 170.0f;
-        float buttonHeight = 66.0f;
+        float buttonWidth = menuW * 0.20f;
+        float buttonHeight = sh * 0.075f;
+        if (buttonHeight < 52.0f) buttonHeight = 52.0f;
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10, 5.0f));
         
         struct TabButton {
@@ -508,7 +544,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar))
             {
                 ImGui::BeginGroupPanel("Performance", ImVec2(-1, 0));
                 ImGui::Columns(2, nullptr, false);
-                g_widgets.checkbox("Force 120 / 60 Fps", &checkboxStates["FRAME120"]);
+                g_widgets.checkbox("Force 120 FPS", &checkboxStates["FRAME120"]);
                 ImGui::NextColumn();
                 g_widgets.checkbox("Force 40 Fps", &checkboxStates["FRAME40"]);
                 ImGui::NextColumn();
@@ -561,6 +597,8 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar))
 }
 ImGui::PopFont();
 ImGui::End();
+ImGui::PopStyleColor(2);
+ImGui::PopStyleVar(3);
 }
 
 ImGui::Render();

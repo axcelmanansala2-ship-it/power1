@@ -65,7 +65,11 @@ static void hooked_SetUltraFrameRateDeviceInfo(void *thiz, bool enableUltraFrame
         orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
         return;
     }
-    orig_SetUltraFrameRateDeviceInfo(thiz, true, 240, 165, 100, true);
+    if (checkboxStates["FRAME120"]) {
+        orig_SetUltraFrameRateDeviceInfo(thiz, true, 120, 120, 120, true);
+        return;
+    }
+    orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
 }
 
 //fastscope
