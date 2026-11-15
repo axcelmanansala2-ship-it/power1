@@ -97,14 +97,9 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 
 EGLBoolean (*orig_eglSwapBuffers)(...);
 
-static void AccelForce120(EGLDisplay dpy) {
-    if (checkboxStates["FRAME120"] && gMatchLive.load()) eglSwapInterval(dpy, 0);
-}
-
 EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
 eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
 eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
-AccelForce120(dpy);
 if (!g_Initialized) {
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();

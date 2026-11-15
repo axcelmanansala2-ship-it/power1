@@ -77,6 +77,18 @@ static SetUltraFrameRateDeviceInfo_t orig_SetUltraFrameRateDeviceInfo;
 
 static void hooked_SetUltraFrameRateDeviceInfo(void *thiz, bool enableUltraFrameRate, int ultraFrameRate, int ultraFrameRateBR, int ultraFrameRateQualityLimit, bool customizedFrameRate) {
     if (!orig_SetUltraFrameRateDeviceInfo) return;
+    if (!thiz) {
+        orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
+        return;
+    }
+    if (checkboxStates["FRAME120"]) {
+        orig_SetUltraFrameRateDeviceInfo(thiz, true, 120, 120, 100, true);
+        return;
+    }
+    if (checkboxStates["FRAME40"]) {
+        orig_SetUltraFrameRateDeviceInfo(thiz, false, 40, 40, 40, false);
+        return;
+    }
     orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
 }
 
@@ -956,8 +968,8 @@ extern std::atomic<bool> gMatchLive;
 static int (*orig_GetFrameRateValue)(void* instance, int fl, int mode) = nullptr;
 static int hook_GetFrameRateValue(void* instance, int fl, int mode) {
     if (!orig_GetFrameRateValue) return 60;
-    if (instance != nullptr && gMatchLive.load() && checkboxStates["FRAME120"]) return 120;
-    if (instance != nullptr && gMatchLive.load() && checkboxStates["FRAME40"]) return 40;
+    if (instance != nullptr && checkboxStates["FRAME120"]) return 120;
+    if (instance != nullptr && checkboxStates["FRAME40"]) return 40;
     return orig_GetFrameRateValue(instance, fl, mode);
 }
 
