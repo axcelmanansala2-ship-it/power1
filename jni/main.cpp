@@ -625,7 +625,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 ImGui::BeginGroupPanel("Skin ID", ImVec2(-1, 0));
                 RefreshHeldWeaponSkins();
                 g_widgets.checkbox("Swap default skin", &checkboxStates["SKINSWAP"]);
-                ImGui::Text("Weapon %d   equipped %u", gHeldWeaponId, gHeldSkinId);
+                ImGui::Text("Weapon %d   base %u   equipped %u", gHeldWeaponId, gHeldBaseId, gHeldSkinId);
                 ImGui::Text("Default becomes %u", gWeaponSkinId);
                 ImGui::BeginChild("##HeldSkins", ImVec2(0, 140), true);
                 if (gHeldWeaponId == 0) {
