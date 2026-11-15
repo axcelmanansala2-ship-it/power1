@@ -1,16 +1,23 @@
 #include <cstdio>
 #include <string>
 #include <cstring>
+#include <cctype>
 #include <iostream>
 #include <sstream>
 #include <chrono>
 #include <atomic>
+#include <vector>
+#include <algorithm>
+#include <unordered_set>
+#include <thread>
 #include <jni.h>
 #include <iomanip>
 #include <map>
-#include <sys/stat.h> 
-#include <dirent.h>     
-#include <unistd.h>      
+#include <sys/stat.h>
+#include <sys/uio.h>
+#include <sys/syscall.h>
+#include <dirent.h>
+#include <unistd.h>
 #include <EGL/egl.h>
 #include <unordered_map>
 #include "Includes/Utils.h"
@@ -97,27 +104,327 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 
 EGLBoolean (*orig_eglSwapBuffers)(...);
 
-static bool gSkinDone = false;
+static std::atomic<int> gSkinWeapons{0};
+static std::atomic<int> gSkinSkins{0};
+static std::atomic<bool> gSkinDone{false};
 static char gSkinPath[128] = "";
 
-static void SaveSkinFileNow() {
-    if (gSkinDone) return;
+static bool VmRead(void* dst, uintptr_t src, size_t n) {
+    if (!dst || src < 0x1000 || n == 0) return false;
+    struct iovec local;
+    struct iovec remote;
+    local.iov_base = dst;
+    local.iov_len = n;
+    remote.iov_base = (void*)src;
+    remote.iov_len = n;
+    long got = syscall(__NR_process_vm_readv, (long)getpid(), &local, 1L, &remote, 1L, 0L);
+    return got == (long)n;
+}
+
+static bool VmEq(uintptr_t addr, const char* text) {
+    char buf[40];
+    size_t n = strlen(text);
+    if (n + 1 > sizeof(buf)) return false;
+    if (!VmRead(buf, addr, n + 1)) return false;
+    return memcmp(buf, text, n + 1) == 0;
+}
+
+struct MapSeg {
+    uintptr_t start;
+    uintptr_t end;
+    bool rw;
+    bool exec;
+    bool file;
+    bool keep;
+};
+
+static void ReadMaps(std::vector<MapSeg>& out) {
+    FILE* fp = fopen("/proc/self/maps", "r");
+    if (!fp) return;
+    char line[768];
+    while (fgets(line, sizeof(line), fp)) {
+        unsigned long s = 0, e = 0;
+        char perm[8] = {0};
+        if (sscanf(line, "%lx-%lx %7s", &s, &e, perm) < 3) continue;
+        if (e <= s || perm[0] != 'r') continue;
+        if (strstr(line, "[stack]") || strstr(line, "[vdso]") || strstr(line, "[vvar]") || strstr(line, "/dev/")) continue;
+        MapSeg seg;
+        seg.start = (uintptr_t)s;
+        seg.end = (uintptr_t)e;
+        seg.rw = perm[1] == 'w';
+        seg.exec = perm[2] == 'x';
+        seg.file = strchr(line, '/') != nullptr;
+        seg.keep = strstr(line, "libunity.so") || strstr(line, "global-metadata") || strstr(line, "il2cpp");
+        out.push_back(seg);
+    }
+    fclose(fp);
+}
+
+static void FindExact(const std::vector<MapSeg>& maps, const char* needle, bool wide, std::vector<uintptr_t>& hits) {
+    size_t nlen = strlen(needle);
+    std::vector<uint8_t> buf(256 * 1024);
+    for (const MapSeg& seg : maps) {
+        size_t len = seg.end - seg.start;
+        if (len < nlen + 1 || len > 256ull * 1024 * 1024) continue;
+        if (seg.exec && !wide) continue;
+        if (!seg.keep && (seg.file || len > 32ull * 1024 * 1024)) continue;
+        for (uintptr_t addr = seg.start; addr + nlen + 1 <= seg.end; ) {
+            size_t n = seg.end - addr;
+            if (n > buf.size()) n = buf.size();
+            if (!VmRead(buf.data(), addr, n)) {
+                addr += 65536;
+                continue;
+            }
+            for (size_t i = 0; i + nlen < n; ++i) {
+                if (buf[i + nlen] != 0 || memcmp(buf.data() + i, needle, nlen) != 0) continue;
+                if (i > 0 && isalnum(buf[i - 1])) continue;
+                hits.push_back(addr + i);
+                if (hits.size() >= 32) return;
+            }
+            if (n <= nlen) break;
+            addr += n - nlen;
+        }
+    }
+}
+
+static void FindKlass(const std::vector<MapSeg>& maps, const std::vector<uintptr_t>& names, bool wide, std::vector<uintptr_t>& klasses) {
+    if (names.empty()) return;
+    std::vector<uint8_t> buf(256 * 1024);
+    for (const MapSeg& seg : maps) {
+        size_t len = seg.end - seg.start;
+        if (len < 0x20 || len > 256ull * 1024 * 1024) continue;
+        if (seg.exec && !wide) continue;
+        if (!seg.keep && (seg.file || len > 32ull * 1024 * 1024)) continue;
+        for (uintptr_t addr = seg.start; addr + 8 <= seg.end; ) {
+            size_t n = seg.end - addr;
+            if (n > buf.size()) n = buf.size();
+            n &= ~((size_t)7);
+            if (n < 8) break;
+            if (!VmRead(buf.data(), addr, n)) {
+                addr += 65536;
+                continue;
+            }
+            for (size_t i = 0; i + 8 <= n; i += 8) {
+                uintptr_t v = 0;
+                memcpy(&v, buf.data() + i, 8);
+                bool nameHit = false;
+                for (uintptr_t name : names) {
+                    if (v == name) { nameHit = true; break; }
+                }
+                if (!nameHit || addr + i < 0x18) continue;
+                uintptr_t ns = 0;
+                if (!VmRead(&ns, addr + i + 8, sizeof(ns))) continue;
+                if (!VmEq(ns, "Config")) continue;
+                uintptr_t choices[2] = {addr + i - 0x10, addr + i - 0x18};
+                for (uintptr_t cls : choices) {
+                    bool seen = false;
+                    for (uintptr_t have : klasses) if (have == cls) seen = true;
+                    if (seen) continue;
+                    klasses.push_back(cls);
+                    if (klasses.size() >= 8) return;
+                }
+            }
+            addr += n;
+        }
+    }
+}
+
+static bool SkinIdOk(uint32_t v) {
+    return v >= 100000u && v < 2000000000u;
+}
+
+struct SkinRow { uint32_t base; int def; };
+struct SkinBag {
+    std::unordered_map<uint32_t, SkinRow> rows;
+    std::unordered_map<uint32_t, std::vector<uint32_t>> skins;
+};
+
+static void AddSkin(SkinBag& bag, uint32_t key, uint32_t skin) {
+    if (!SkinIdOk(key) || !SkinIdOk(skin) || key == skin) return;
+    std::vector<uint32_t>& list = bag.skins[key];
+    for (uint32_t have : list) if (have == skin) return;
+    if (list.size() < 500) list.push_back(skin);
+}
+
+static bool IsKlass(uintptr_t v, const std::vector<uintptr_t>& list) {
+    for (uintptr_t k : list) if (k == v) return true;
+    return false;
+}
+
+static void ConsiderObject(SkinBag& bag, uintptr_t obj, uintptr_t klass,
+                           const std::vector<uintptr_t>& wepK,
+                           const std::vector<uintptr_t>& camoK,
+                           const std::vector<uintptr_t>& skinK) {
+    uint8_t raw[0x48];
+    if (!VmRead(raw, obj, sizeof(raw))) return;
+    uint32_t u34 = 0, u40 = 0, u14 = 0, u18 = 0, u24 = 0, u28 = 0;
+    int32_t def = 0;
+    memcpy(&u34, raw + 0x34, 4);
+    memcpy(&def, raw + 0x38, 4);
+    memcpy(&u40, raw + 0x40, 4);
+    memcpy(&u14, raw + 0x14, 4);
+    memcpy(&u18, raw + 0x18, 4);
+    memcpy(&u24, raw + 0x24, 4);
+    memcpy(&u28, raw + 0x28, 4);
+    if (IsKlass(klass, wepK)) {
+        if (!SkinIdOk(u40) || def < 0 || bag.rows.size() >= 8000 || bag.rows.count(u40)) return;
+        uint32_t base = SkinIdOk(u34) ? u34 : u40;
+        int useDef = (def == 0 || SkinIdOk((uint32_t)def)) ? def : 0;
+        bag.rows[u40] = SkinRow{base, useDef};
+        return;
+    }
+    if (IsKlass(klass, camoK)) AddSkin(bag, u14, u18);
+    else if (IsKlass(klass, skinK)) AddSkin(bag, u28, u24);
+}
+
+static void ScanObjects(const std::vector<MapSeg>& maps, SkinBag& bag,
+                        const std::vector<uintptr_t>& wepK,
+                        const std::vector<uintptr_t>& camoK,
+                        const std::vector<uintptr_t>& skinK) {
+    if (wepK.empty() && camoK.empty() && skinK.empty()) return;
+    std::vector<MapSeg> heap;
+    for (const MapSeg& seg : maps) {
+        size_t len = seg.end - seg.start;
+        if (!seg.rw || seg.file || seg.exec) continue;
+        if (len < 1024 * 1024 || len > 1024ull * 1024 * 1024) continue;
+        heap.push_back(seg);
+    }
+    std::sort(heap.begin(), heap.end(), [](const MapSeg& a, const MapSeg& b) {
+        return (a.end - a.start) > (b.end - b.start);
+    });
+    if (heap.size() > 6) heap.resize(6);
+    std::vector<uint8_t> buf(256 * 1024);
+    size_t scanned = 0;
+    for (const MapSeg& seg : heap) {
+        if (scanned >= 1024ull * 1024 * 1024) break;
+        for (uintptr_t addr = seg.start; addr + 8 <= seg.end; ) {
+            size_t n = seg.end - addr;
+            if (n > buf.size()) n = buf.size();
+            n &= ~((size_t)7);
+            if (n < 8) break;
+            if (!VmRead(buf.data(), addr, n)) {
+                addr += 65536;
+                scanned += 65536;
+                continue;
+            }
+            for (size_t i = 0; i + 8 <= n; i += 8) {
+                uintptr_t v = 0;
+                memcpy(&v, buf.data() + i, 8);
+                if (!IsKlass(v, wepK) && !IsKlass(v, camoK) && !IsKlass(v, skinK)) continue;
+                ConsiderObject(bag, addr + i, v, wepK, camoK, skinK);
+            }
+            addr += n;
+            scanned += n;
+        }
+    }
+}
+
+static FILE* OpenSkinFile() {
     const char* paths[] = {
         "/sdcard/codm_skins.txt",
         "/storage/emulated/0/codm_skins.txt",
         "/sdcard/Android/data/com.garena.game.codm/files/codm_skins.txt"
     };
     for (const char* path : paths) {
-        FILE* out = fopen(path, "w");
-        if (!out) continue;
-        fprintf(out, "weapon base default skins\n");
-        fclose(out);
+        FILE* fp = fopen(path, "w");
+        if (!fp) continue;
         snprintf(gSkinPath, sizeof(gSkinPath), "%s", path);
-        gSkinDone = true;
-        return;
+        return fp;
     }
     snprintf(gSkinPath, sizeof(gSkinPath), "%s", "sdcard write failed");
-    gSkinDone = true;
+    return nullptr;
+}
+
+static void WriteSkinBag(SkinBag& bag) {
+    FILE* fp = OpenSkinFile();
+    if (!fp) return;
+    fprintf(fp, "weapon base default skins\n");
+    for (auto& item : bag.skins) {
+        std::sort(item.second.begin(), item.second.end());
+        item.second.erase(std::unique(item.second.begin(), item.second.end()), item.second.end());
+    }
+    std::vector<uint32_t> ids;
+    ids.reserve(bag.rows.size());
+    for (const auto& item : bag.rows) ids.push_back(item.first);
+    std::sort(ids.begin(), ids.end());
+    std::unordered_set<uint32_t> printed;
+    int skinN = 0;
+    for (uint32_t id : ids) {
+        SkinRow row = bag.rows[id];
+        uint32_t key = row.base ? row.base : id;
+        fprintf(fp, "%u %u %d", id, key, row.def);
+        if (!printed.count(key)) {
+            printed.insert(key);
+            printed.insert(id);
+            auto writeKey = [&](uint32_t k) {
+                auto it = bag.skins.find(k);
+                if (it == bag.skins.end()) return;
+                for (uint32_t skin : it->second) {
+                    fprintf(fp, " %u", skin);
+                    skinN++;
+                }
+            };
+            writeKey(key);
+            if (id != key) writeKey(id);
+        }
+        fputc('\n', fp);
+    }
+    for (const auto& item : bag.skins) {
+        if (printed.count(item.first)) continue;
+        fprintf(fp, "%u %u 0", item.first, item.first);
+        for (uint32_t skin : item.second) {
+            fprintf(fp, " %u", skin);
+            skinN++;
+        }
+        fputc('\n', fp);
+    }
+    fclose(fp);
+    gSkinWeapons.store((int)bag.rows.size());
+    gSkinSkins.store(skinN);
+}
+
+static void SkinDumpThread() {
+    FILE* fp = OpenSkinFile();
+    if (fp) {
+        fprintf(fp, "weapon base default skins\n");
+        fclose(fp);
+    }
+    std::vector<uintptr_t> wepK, camoK, skinK;
+    int best = 0;
+    int stable = 0;
+    for (int attempt = 0; attempt < 12; ++attempt) {
+        if (attempt) sleep(2);
+        std::vector<MapSeg> maps;
+        ReadMaps(maps);
+        bool wide = attempt >= 3;
+        if (attempt == 4 && best == 0) {
+            wepK.clear();
+            camoK.clear();
+            skinK.clear();
+        }
+        if (wepK.empty() && camoK.empty() && skinK.empty()) {
+            std::vector<uintptr_t> wepNames, camoNames, skinNames;
+            FindExact(maps, "WeaponConfConfig", wide, wepNames);
+            FindExact(maps, "WeaponCamosConfig", wide, camoNames);
+            FindExact(maps, "WeaponSkinConfig", wide, skinNames);
+            FindKlass(maps, wepNames, wide, wepK);
+            FindKlass(maps, camoNames, wide, camoK);
+            FindKlass(maps, skinNames, wide, skinK);
+        }
+        if (wepK.empty() && camoK.empty() && skinK.empty()) continue;
+        SkinBag bag;
+        ScanObjects(maps, bag, wepK, camoK, skinK);
+        int score = (int)bag.rows.size() + (int)bag.skins.size();
+        if (score > best && score >= 5) {
+            best = score;
+            stable = 0;
+            WriteSkinBag(bag);
+        } else if (score > 0 && score == best) {
+            stable++;
+        }
+        if (stable >= 2 && best >= 20) break;
+    }
+    gSkinDone.store(true);
 }
 
 static void AccelForce120(EGLDisplay dpy) {
@@ -567,7 +874,10 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
 
                 ImGui::Spacing();
                 ImGui::BeginGroupPanel("Skin ID", ImVec2(-1, 0));
+                ImGui::Text("weapons %d", gSkinWeapons.load());
+                ImGui::Text("skins %d", gSkinSkins.load());
                 ImGui::TextWrapped("%s", gSkinPath[0] ? gSkinPath : "waiting");
+                if (!gSkinDone.load()) ImGui::TextUnformatted("saving...");
                 ImGui::EndGroupPanel();
                 
                 ImGui::Spacing();
@@ -635,7 +945,7 @@ void Init_Thread(){
     
     INIT_OFFSETS();
     hooking();
-    SaveSkinFileNow();
+    std::thread(SkinDumpThread).detach();
     
     DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     started = true;
