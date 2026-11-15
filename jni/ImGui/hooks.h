@@ -56,7 +56,7 @@ static uintptr_t libunity_base = 0;
 // ================= OFFSET ENCRYPTION =================
 
 
-// jnmaini FPS unlock, plus dump.cs so the game cannot write a lower cap back.
+// CODM 1.6.59 — jnmaini Dump 1.6.59.cs, libunity.so. Not the MLBB dump.cs.
 typedef void (*SetUltraFrameRateDeviceInfo_t)(void *, bool, int, int, int, bool);
 static SetUltraFrameRateDeviceInfo_t orig_SetUltraFrameRateDeviceInfo;
 
@@ -75,37 +75,11 @@ static void hook_set_targetFrameRate(int value) {
     if (orig_set_targetFrameRate) orig_set_targetFrameRate(value);
 }
 
-static void (*orig_set_vSyncCount)(int) = nullptr;
-static void hook_set_vSyncCount(int value) {
-    if (checkboxStates["FRAME120"]) value = 0;
-    if (orig_set_vSyncCount) orig_set_vSyncCount(value);
-}
-
-static int (*orig_TransformFrameRateLevel2Value)(void*, int) = nullptr;
-static int hook_TransformFrameRateLevel2Value(void* self, int level) {
-    if (checkboxStates["FRAME120"]) return 120;
-    return orig_TransformFrameRateLevel2Value ? orig_TransformFrameRateLevel2Value(self, level) : level;
-}
-
-static int (*orig_GetFrameRateValueMapping)(void*, bool) = nullptr;
-static int hook_GetFrameRateValueMapping(void* self, bool isMaxLevel) {
-    if (checkboxStates["FRAME120"]) return 120;
-    return orig_GetFrameRateValueMapping ? orig_GetFrameRateValueMapping(self, isMaxLevel) : 60;
-}
-
-static void (*orig_ApplyFrameRateValue)(void*, int, int) = nullptr;
-static void hook_ApplyFrameRateValue(void* self, int frameLv, int modeIndex) {
-    if (orig_ApplyFrameRateValue) orig_ApplyFrameRateValue(self, frameLv, modeIndex);
-}
-
-static bool g_dumpPerfReady = false;
-static void InstallDumpPerfHooks() {
-    if (g_dumpPerfReady) return;
-    uintptr_t logic = getAbsoluteAddress(DOS("liblogic.so"), 0);
-    if (!logic) return;
-    g_dumpPerfReady = true;
-    DOSHOOK((void*)(logic + 0x138ac64), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
-    DOSHOOK((void*)(logic + 0x12ee960), (void*)hook_set_vSyncCount, (void**)&orig_set_vSyncCount);
+static void (*orig_SetFrameRate)(void*, int, bool) = nullptr;
+static void hook_SetFrameRate(void* thiz, int target, bool gm) {
+    if (!orig_SetFrameRate) return;
+    if (checkboxStates["FRAME120"]) target = 120;
+    orig_SetFrameRate(thiz, target, gm);
 }
 
 //fastscope
@@ -343,10 +317,9 @@ static void hook_set_EnableVulkan(void *instance, bool value) {
     return orig_set_EnableVulkan(instance, false);
 }
 //unlock all graphics
-static void (*orig_SetEnableVSync)(bool enabled);
-static void hook_SetEnableVSync(bool enabled) {
-    if (checkboxStates["FRAME120"]) enabled = false;
-    if (orig_SetEnableVSync) orig_SetEnableVSync(enabled);
+static void (*orig_SetEnableVSync)(void* thiz);
+static void hook_SetEnableVSync(void* thiz) {
+    if (!checkboxStates["FRAME120"] && orig_SetEnableVSync) orig_SetEnableVSync(thiz);
 }
 
 
@@ -534,9 +507,11 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x534D8E4")), (void*)hooked_get_fixedDe
 // Wallhack
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53D2114")), (void*)&h_OnReSpawnPlayer, (void**)&o_OnReSpawnPlayer);
 
-// FPS: only dump.cs Unity setters. Old libunity FPS offsets are not in this dump
-// and were landing on unrelated code, which crashed when that code ran.
-InstallDumpPerfHooks();
+// CODM Dump 1.6.59.cs on libunity.so
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCCC")), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAD000")), (void*)hook_SetFrameRate, (void**)&orig_SetFrameRate);
 
 // Snowboard Speed
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53FE7FC")), (void*)hook_get_m_PhysSkisMaxSpeed, (void**)&orig_get_m_PhysSkisMaxSpeed);
