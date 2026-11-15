@@ -529,6 +529,8 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 ImGui::Columns(2, nullptr, false);
                 g_widgets.checkbox("120 FPS", &checkboxStates["FRAME120"]);
                 ImGui::NextColumn();
+                g_widgets.checkbox("Unlock skins", &checkboxStates["SKINUNLOCK"]);
+                ImGui::NextColumn();
                 g_widgets.checkbox("Super low graphics", &checkboxStates["LOWGFX"]);
                 ImGui::NextColumn();
                 g_widgets.checkbox("Hand Cam Mode", &checkboxStates["HAND::CAM"]);

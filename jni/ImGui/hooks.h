@@ -361,6 +361,116 @@ static int hook_GetFrameRateValue(void* instance, int fl, int mode) {
     return orig_GetFrameRateValue(instance, fl, mode);
 }
 
+// CODM 1.6.59 skin ownership. Client checks only. Server still accepts or rejects the equip.
+static bool SkinUnlockOn() {
+    return checkboxStates["SKINUNLOCK"];
+}
+
+static bool (*orig_Loadout_IsHasInventoryData)(uint32_t itemID) = nullptr;
+static bool hook_Loadout_IsHasInventoryData(uint32_t itemID) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_Loadout_IsHasInventoryData) return false;
+    return orig_Loadout_IsHasInventoryData(itemID);
+}
+
+static bool (*orig_Squad_IsHasInventoryData)(void* thiz, uint32_t itemID) = nullptr;
+static bool hook_Squad_IsHasInventoryData(void* thiz, uint32_t itemID) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_Squad_IsHasInventoryData) return false;
+    return orig_Squad_IsHasInventoryData(thiz, itemID);
+}
+
+static bool (*orig_Own_IsHasInventoryData)(void* thiz, uint32_t itemID) = nullptr;
+static bool hook_Own_IsHasInventoryData(void* thiz, uint32_t itemID) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_Own_IsHasInventoryData) return false;
+    return orig_Own_IsHasInventoryData(thiz, itemID);
+}
+
+static bool (*orig_IsOwnPermanentItem)(void* thiz, uint32_t id, uint32_t ownerId) = nullptr;
+static bool hook_IsOwnPermanentItem(void* thiz, uint32_t id, uint32_t ownerId) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_IsOwnPermanentItem) return false;
+    return orig_IsOwnPermanentItem(thiz, id, ownerId);
+}
+
+static bool (*orig_IsCharacterLocked)(void* thiz, uint32_t characterID) = nullptr;
+static bool hook_IsCharacterLocked(void* thiz, uint32_t characterID) {
+    if (SkinUnlockOn()) return false;
+    if (!orig_IsCharacterLocked) return false;
+    return orig_IsCharacterLocked(thiz, characterID);
+}
+
+static bool (*orig_IsLockBaseRole)(void* thiz, uint32_t roleBaseID, void* ownRoles) = nullptr;
+static bool hook_IsLockBaseRole(void* thiz, uint32_t roleBaseID, void* ownRoles) {
+    if (SkinUnlockOn()) return false;
+    if (!orig_IsLockBaseRole) return false;
+    return orig_IsLockBaseRole(thiz, roleBaseID, ownRoles);
+}
+
+static bool (*orig_IsShowLockIcon)(void* thiz, int gameType, uint32_t itemId) = nullptr;
+static bool hook_IsShowLockIcon(void* thiz, int gameType, uint32_t itemId) {
+    if (SkinUnlockOn()) return false;
+    if (!orig_IsShowLockIcon) return false;
+    return orig_IsShowLockIcon(thiz, gameType, itemId);
+}
+
+static bool (*orig_IsSkinCamoConceptUnlocked)(int weaponType, uint32_t baseWeaponID, uint32_t camosConceptType) = nullptr;
+static bool hook_IsSkinCamoConceptUnlocked(int weaponType, uint32_t baseWeaponID, uint32_t camosConceptType) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_IsSkinCamoConceptUnlocked) return false;
+    return orig_IsSkinCamoConceptUnlocked(weaponType, baseWeaponID, camosConceptType);
+}
+
+static bool (*orig_CamosConceptUnlocked)(uint32_t camosConceptID) = nullptr;
+static bool hook_CamosConceptUnlocked(uint32_t camosConceptID) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_CamosConceptUnlocked) return false;
+    return orig_CamosConceptUnlocked(camosConceptID);
+}
+
+static bool (*orig_SpecialCamoUnlocked)(uint32_t baseWeaponID) = nullptr;
+static bool hook_SpecialCamoUnlocked(uint32_t baseWeaponID) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_SpecialCamoUnlocked) return false;
+    return orig_SpecialCamoUnlocked(baseWeaponID);
+}
+
+static bool (*orig_IsWeaponSkinUnlock)(void* thiz, uint32_t skinId) = nullptr;
+static bool hook_IsWeaponSkinUnlock(void* thiz, uint32_t skinId) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_IsWeaponSkinUnlock) return false;
+    return orig_IsWeaponSkinUnlock(thiz, skinId);
+}
+
+static bool (*orig_IsOwnedAppearance)(uint32_t itemId, uint32_t itemSubType) = nullptr;
+static bool hook_IsOwnedAppearance(uint32_t itemId, uint32_t itemSubType) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_IsOwnedAppearance) return false;
+    return orig_IsOwnedAppearance(itemId, itemSubType);
+}
+
+static bool (*orig_CanEuippedRoleSkin)(void* thiz, uint32_t itemID) = nullptr;
+static bool hook_CanEuippedRoleSkin(void* thiz, uint32_t itemID) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_CanEuippedRoleSkin) return false;
+    return orig_CanEuippedRoleSkin(thiz, itemID);
+}
+
+static bool (*orig_CanEuippedRoleSkin2)(void* roleConfig, void* roleSkinConfig) = nullptr;
+static bool hook_CanEuippedRoleSkin2(void* roleConfig, void* roleSkinConfig) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_CanEuippedRoleSkin2) return false;
+    return orig_CanEuippedRoleSkin2(roleConfig, roleSkinConfig);
+}
+
+static bool (*orig_CanEquipRoleSkin)(void* playerInfo, uint32_t itemId) = nullptr;
+static bool hook_CanEquipRoleSkin(void* playerInfo, uint32_t itemId) {
+    if (SkinUnlockOn()) return true;
+    if (!orig_CanEquipRoleSkin) return false;
+    return orig_CanEquipRoleSkin(playerInfo, itemId);
+}
+
 static void (*o_OnReSpawnPlayer)(void *, Vector3) = nullptr;
 static void h_OnReSpawnPlayer(void *instance, Vector3 serverSyncPos) {
     if (o_OnReSpawnPlayer) {
@@ -505,6 +615,23 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0xC0B4458")), (void*)hook_GetMaxFov_1p,
 
 // Fast Swim
 DOSHOOK((void*)(libunity_base + GET_OFF("0x5597B14")), (void*)hook_CalcSwimmingSpeedScale, (void**)&orig_CalcSwimmingSpeedScale);
+
+// Skin unlock. Dump 1.6.59.cs, libunity.so. Off until SKINUNLOCK.
+DOSHOOK((void*)(libunity_base + GET_OFF("0x5A4CBFC")), (void*)hook_Loadout_IsHasInventoryData, (void**)&orig_Loadout_IsHasInventoryData);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x7846454")), (void*)hook_Squad_IsHasInventoryData, (void**)&orig_Squad_IsHasInventoryData);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xACAFD44")), (void*)hook_Own_IsHasInventoryData, (void**)&orig_Own_IsHasInventoryData);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x7844C08")), (void*)hook_IsOwnPermanentItem, (void**)&orig_IsOwnPermanentItem);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x5A2E4E4")), (void*)hook_IsCharacterLocked, (void**)&orig_IsCharacterLocked);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x5A2E6EC")), (void*)hook_IsLockBaseRole, (void**)&orig_IsLockBaseRole);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x86E4464")), (void*)hook_IsShowLockIcon, (void**)&orig_IsShowLockIcon);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAAB6CFC")), (void*)hook_IsSkinCamoConceptUnlocked, (void**)&orig_IsSkinCamoConceptUnlocked);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAAB7048")), (void*)hook_CamosConceptUnlocked, (void**)&orig_CamosConceptUnlocked);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAAB7228")), (void*)hook_SpecialCamoUnlocked, (void**)&orig_SpecialCamoUnlocked);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x982A17C")), (void*)hook_IsWeaponSkinUnlock, (void**)&orig_IsWeaponSkinUnlock);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x752BD90")), (void*)hook_IsOwnedAppearance, (void**)&orig_IsOwnedAppearance);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xBAE6714")), (void*)hook_CanEuippedRoleSkin, (void**)&orig_CanEuippedRoleSkin);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xBAE6794")), (void*)hook_CanEuippedRoleSkin2, (void**)&orig_CanEuippedRoleSkin2);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x5F53644")), (void*)hook_CanEquipRoleSkin, (void**)&orig_CanEquipRoleSkin);
 
 // Graphics
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAD9D4")), (void*)hook_SetEnableVSync, (void**)&orig_SetEnableVSync);
