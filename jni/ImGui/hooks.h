@@ -471,6 +471,55 @@ static bool hook_CanEquipRoleSkin(void* playerInfo, uint32_t itemId) {
     return orig_CanEquipRoleSkin(playerInfo, itemId);
 }
 
+// Typed IDs. Dump 1.6.59 has no skin catalog; RoleSkinConfig.ID and WeaponCamosConfig.CamoItemID are filled at runtime.
+uint32_t gWeaponSkinId = 0;
+uint32_t gSuitSkinId = 0;
+
+static bool SkinSwapOn() {
+    return checkboxStates["SKINSWAP"];
+}
+
+static uint32_t (*orig_Weapon_get_CurSkinID)(void* thiz) = nullptr;
+static uint32_t hook_Weapon_get_CurSkinID(void* thiz) {
+    uint32_t id = orig_Weapon_get_CurSkinID ? orig_Weapon_get_CurSkinID(thiz) : 0;
+    if (SkinSwapOn() && gWeaponSkinId != 0 && id == 0) return gWeaponSkinId;
+    return id;
+}
+
+static uint32_t (*orig_get_NetSuitID)(void* thiz) = nullptr;
+static uint32_t hook_get_NetSuitID(void* thiz) {
+    uint32_t id = orig_get_NetSuitID ? orig_get_NetSuitID(thiz) : 0;
+    if (SkinSwapOn() && gSuitSkinId != 0 && id == 0) return gSuitSkinId;
+    return id;
+}
+
+static int (*orig_GetModelAssetID)(int assetID, uint32_t skinID, bool for1P, uint8_t skinType, bool isPawn, bool isWeapon, uint64_t roleID) = nullptr;
+static int hook_GetModelAssetID(int assetID, uint32_t skinID, bool for1P, uint8_t skinType, bool isPawn, bool isWeapon, uint64_t roleID) {
+    if (!orig_GetModelAssetID) return assetID;
+    if (SkinSwapOn() && skinID == 0) {
+        if (isWeapon && gWeaponSkinId != 0) skinID = gWeaponSkinId;
+        else if (isPawn && gSuitSkinId != 0) skinID = gSuitSkinId;
+    }
+    return orig_GetModelAssetID(assetID, skinID, for1P, skinType, isPawn, isWeapon, roleID);
+}
+
+static int (*orig_GetModelAssetID2)(int assetID, uint32_t skinID, bool for1P, uint64_t roleID, bool isWeapon, bool isUsePawnSkin) = nullptr;
+static int hook_GetModelAssetID2(int assetID, uint32_t skinID, bool for1P, uint64_t roleID, bool isWeapon, bool isUsePawnSkin) {
+    if (!orig_GetModelAssetID2) return assetID;
+    if (SkinSwapOn() && skinID == 0) {
+        if (isUsePawnSkin && gSuitSkinId != 0) skinID = gSuitSkinId;
+        else if (isWeapon && gWeaponSkinId != 0) skinID = gWeaponSkinId;
+    }
+    return orig_GetModelAssetID2(assetID, skinID, for1P, roleID, isWeapon, isUsePawnSkin);
+}
+
+static void (*orig_SkinDoChange)(void* root, int weaponID, uint32_t skinID, bool is1P, uint8_t skinType, void* ultSkinIndex, bool isUI, uint64_t roleID) = nullptr;
+static void hook_SkinDoChange(void* root, int weaponID, uint32_t skinID, bool is1P, uint8_t skinType, void* ultSkinIndex, bool isUI, uint64_t roleID) {
+    if (!orig_SkinDoChange) return;
+    if (SkinSwapOn() && skinID == 0 && gWeaponSkinId != 0) skinID = gWeaponSkinId;
+    orig_SkinDoChange(root, weaponID, skinID, is1P, skinType, ultSkinIndex, isUI, roleID);
+}
+
 static void (*o_OnReSpawnPlayer)(void *, Vector3) = nullptr;
 static void h_OnReSpawnPlayer(void *instance, Vector3 serverSyncPos) {
     if (o_OnReSpawnPlayer) {
@@ -632,6 +681,11 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x752BD90")), (void*)hook_IsOwnedAppear
 DOSHOOK((void*)(libunity_base + GET_OFF("0xBAE6714")), (void*)hook_CanEuippedRoleSkin, (void**)&orig_CanEuippedRoleSkin);
 DOSHOOK((void*)(libunity_base + GET_OFF("0xBAE6794")), (void*)hook_CanEuippedRoleSkin2, (void**)&orig_CanEuippedRoleSkin2);
 DOSHOOK((void*)(libunity_base + GET_OFF("0x5F53644")), (void*)hook_CanEquipRoleSkin, (void**)&orig_CanEquipRoleSkin);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x5471B10")), (void*)hook_Weapon_get_CurSkinID, (void**)&orig_Weapon_get_CurSkinID);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xA0C365C")), (void*)hook_get_NetSuitID, (void**)&orig_get_NetSuitID);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x96EEAE4")), (void*)hook_GetModelAssetID, (void**)&orig_GetModelAssetID);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x96EF468")), (void*)hook_GetModelAssetID2, (void**)&orig_GetModelAssetID2);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x96EFD68")), (void*)hook_SkinDoChange, (void**)&orig_SkinDoChange);
 
 // Graphics
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAD9D4")), (void*)hook_SetEnableVSync, (void**)&orig_SetEnableVSync);

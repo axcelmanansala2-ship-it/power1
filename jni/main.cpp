@@ -539,6 +539,13 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 
                 ImGui::Columns(1);
                 ImGui::EndGroupPanel();
+
+                ImGui::Spacing();
+                ImGui::BeginGroupPanel("Skin ID", ImVec2(-1, 0));
+                g_widgets.checkbox("Swap default skin", &checkboxStates["SKINSWAP"]);
+                ImGui::InputScalar("Weapon skin", ImGuiDataType_U32, &gWeaponSkinId, nullptr, nullptr, "%u");
+                ImGui::InputScalar("Suit skin", ImGuiDataType_U32, &gSuitSkinId, nullptr, nullptr, "%u");
+                ImGui::EndGroupPanel();
                 
                 ImGui::Spacing();
                 
