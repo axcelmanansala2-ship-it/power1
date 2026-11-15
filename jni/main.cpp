@@ -97,122 +97,27 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 
 EGLBoolean (*orig_eglSwapBuffers)(...);
 
-static bool SkinPtrOk(void* p) {
-    return p && Tools::IsPtrValid(p);
-}
-
-static int SkinListCount(void* list, int maxN) {
-    if (!SkinPtrOk(list)) return 0;
-    int n = *reinterpret_cast<int*>((uintptr_t)list + 0x18);
-    if (n < 1 || n > maxN) return 0;
-    return n;
-}
-
-static void* SkinListAt(void* list, int i) {
-    void* items = *reinterpret_cast<void**>((uintptr_t)list + 0x10);
-    if (!SkinPtrOk(items)) return nullptr;
-    int maxLength = *reinterpret_cast<int*>((uintptr_t)items + 0x18);
-    if (i < 0 || i >= maxLength) return nullptr;
-    void* elem = *reinterpret_cast<void**>((uintptr_t)items + 0x20 + (uintptr_t)i * sizeof(void*));
-    return SkinPtrOk(elem) ? elem : nullptr;
-}
-
-static void* gSkinArr = nullptr;
-static int gSkinTotal = 0;
-static int gSkinIndex = 0;
-static int gSkinSaved = 0;
-static int gSkinWait = 0;
 static bool gSkinDone = false;
-static FILE* gSkinOut = nullptr;
 static char gSkinPath[128] = "";
 
-static void LobbySkinDump() {
+static void SaveSkinFileNow() {
     if (gSkinDone) return;
-    if (gMatchLive.load()) {
-        if (gSkinOut) {
-            fclose(gSkinOut);
-            gSkinOut = nullptr;
-        }
+    const char* paths[] = {
+        "/sdcard/codm_skins.txt",
+        "/storage/emulated/0/codm_skins.txt",
+        "/sdcard/Android/data/com.garena.game.codm/files/codm_skins.txt"
+    };
+    for (const char* path : paths) {
+        FILE* out = fopen(path, "w");
+        if (!out) continue;
+        fprintf(out, "weapon base default skins\n");
+        fclose(out);
+        snprintf(gSkinPath, sizeof(gSkinPath), "%s", path);
+        gSkinDone = true;
         return;
     }
-    if (!fn_GetWeaponArray || !fn_GetConceptList || !fn_GetCamosByConcept) return;
-
-    if (!gSkinArr) {
-        if (++gSkinWait < 120) return;
-        gSkinWait = 0;
-        void* arr = fn_GetWeaponArray();
-        if (!SkinPtrOk(arr)) return;
-        int n = *reinterpret_cast<int*>((uintptr_t)arr + 0x18);
-        if (n < 1 || n > 8000) return;
-        const char* paths[] = {
-            "/sdcard/codm_skins.txt",
-            "/storage/emulated/0/codm_skins.txt",
-            "/sdcard/Android/data/com.garena.game.codm/files/codm_skins.txt"
-        };
-        for (const char* path : paths) {
-            gSkinOut = fopen(path, "w");
-            if (!gSkinOut) continue;
-            snprintf(gSkinPath, sizeof(gSkinPath), "%s", path);
-            break;
-        }
-        if (!gSkinOut) {
-            gSkinDone = true;
-            snprintf(gSkinPath, sizeof(gSkinPath), "%s", "sdcard write failed");
-            return;
-        }
-        fprintf(gSkinOut, "weapon base default skins\n");
-        gSkinArr = arr;
-        gSkinTotal = n;
-        gSkinIndex = 0;
-    }
-
-    static uint32_t seenBase[2048];
-    static int seenCount = 0;
-    int end = gSkinIndex + 8;
-    if (end > gSkinTotal) end = gSkinTotal;
-    for (int i = gSkinIndex; i < end; ++i) {
-        void* conf = *reinterpret_cast<void**>((uintptr_t)gSkinArr + 0x20 + (uintptr_t)i * sizeof(void*));
-        if (!SkinPtrOk(conf) || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)conf + 0x40))) continue;
-        uint32_t id = *reinterpret_cast<uint32_t*>((uintptr_t)conf + 0x40);
-        uint32_t base = *reinterpret_cast<uint32_t*>((uintptr_t)conf + 0x34);
-        int defSkin = *reinterpret_cast<int*>((uintptr_t)conf + 0x38);
-        if (id == 0) continue;
-        if (base == 0) base = id;
-        fprintf(gSkinOut, "%u %u %d", id, base, defSkin);
-        bool known = false;
-        for (int s = 0; s < seenCount; ++s) {
-            if (seenBase[s] == base) { known = true; break; }
-        }
-        if (!known && seenCount < 2048) {
-            seenBase[seenCount++] = base;
-            void* concepts = fn_GetConceptList(base);
-            int conceptCount = SkinListCount(concepts, 32);
-            for (int c = 0; c < conceptCount; ++c) {
-                void* concept = SkinListAt(concepts, c);
-                if (!concept || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)concept + 0x18))) continue;
-                uint32_t conceptId = *reinterpret_cast<uint32_t*>((uintptr_t)concept + 0x18);
-                if (conceptId == 0) continue;
-                void* camos = fn_GetCamosByConcept(conceptId);
-                int camoCount = SkinListCount(camos, 64);
-                for (int k = 0; k < camoCount; ++k) {
-                    void* camo = SkinListAt(camos, k);
-                    if (!camo || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)camo + 0x18))) continue;
-                    uint32_t skinId = *reinterpret_cast<uint32_t*>((uintptr_t)camo + 0x18);
-                    if (skinId == 0) continue;
-                    fprintf(gSkinOut, " %u", skinId);
-                }
-            }
-        }
-        fputc('\n', gSkinOut);
-        gSkinSaved++;
-    }
-    gSkinIndex = end;
-    fflush(gSkinOut);
-    if (gSkinIndex >= gSkinTotal) {
-        fclose(gSkinOut);
-        gSkinOut = nullptr;
-        gSkinDone = true;
-    }
+    snprintf(gSkinPath, sizeof(gSkinPath), "%s", "sdcard write failed");
+    gSkinDone = true;
 }
 
 static void AccelForce120(EGLDisplay dpy) {
@@ -223,7 +128,6 @@ EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
 eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
 eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
 AccelForce120(dpy);
-LobbySkinDump();
 if (!g_Initialized) {
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -663,17 +567,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
 
                 ImGui::Spacing();
                 ImGui::BeginGroupPanel("Skin ID", ImVec2(-1, 0));
-                if (gSkinDone) {
-                    ImGui::Text("Saved %d", gSkinSaved);
-                    ImGui::TextWrapped("%s", gSkinPath);
-                } else if (gMatchLive.load()) {
-                    ImGui::TextUnformatted("Stopped. Stay in the lobby to save skins.");
-                } else if (gSkinTotal > 0) {
-                    ImGui::Text("Saving %d / %d", gSkinIndex, gSkinTotal);
-                    ImGui::TextWrapped("%s", gSkinPath);
-                } else {
-                    ImGui::TextUnformatted("Lobby: searching skins...");
-                }
+                ImGui::TextWrapped("%s", gSkinPath[0] ? gSkinPath : "waiting");
                 ImGui::EndGroupPanel();
                 
                 ImGui::Spacing();
@@ -741,6 +635,7 @@ void Init_Thread(){
     
     INIT_OFFSETS();
     hooking();
+    SaveSkinFileNow();
     
     DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     started = true;
