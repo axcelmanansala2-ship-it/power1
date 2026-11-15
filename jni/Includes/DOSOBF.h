@@ -172,7 +172,8 @@ namespace dos
             }
             secure_zero(m_plain, N);
             m_encrypted.store(true, std::memory_order_relaxed);
-            m_once = std::once_flag(); // allow decrypt again later
+            m_once.~once_flag();
+            new (&m_once) std::once_flag();
         }
 
     private:
