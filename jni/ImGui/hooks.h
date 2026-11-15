@@ -1072,7 +1072,7 @@ static void hooking() {
     DOSHOOK((void*)(libanogs_base + GET_OFF("0x2F7DA4")), (void*)hook_anogs_4, (void**)&anogsOrig[4]);
     DOSHOOK((void*)(libanogs_base + GET_OFF("0x446140")), (void*)hook_anogs_5, (void**)&anogsOrig[5]);
     DOSHOOK((void*)(libanogs_base + GET_OFF("0x42560C")), (void*)hook_anogs_6, (void**)&anogsOrig[6]);
-    DOSHOOK((void*)(libanogs_base + GET_OFF("0x359100")), (void*)hook_anogs_7, (void**)&anogsOrig[7]); 
+ //   DOSHOOK((void*)(libanogs_base + GET_OFF("0x359100")), (void*)hook_anogs_7, (void**)&anogsOrig[7]); 
 
 //FEATURES
 
