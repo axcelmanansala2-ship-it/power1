@@ -121,7 +121,7 @@ static int gHeldWeaponId = 0;
 static uint32_t gHeldBaseId = 0;
 static uint32_t gHeldSkinId = 0;
 static int gHeldDefaultSkin = 0;
-static void* gHeldConf = nullptr;
+static void* gHeldSkinInfo = nullptr;
 static int gHeldQueryWeapon = -1;
 static int gSkinRetry = 0;
 static uint32_t gHeldSkinChoices[48];
@@ -147,10 +147,27 @@ static void RefreshHeldWeaponSkins() {
     int itemId = fn_GetItemID(weapon);
     if (itemId <= 0) return;
     gHeldWeaponId = itemId;
-    if (orig_Weapon_get_CurSkinID) gHeldSkinId = orig_Weapon_get_CurSkinID(weapon);
+
+    gHeldSkinInfo = nullptr;
+    gHeldSkinId = 0;
+    for (int pass = 0; pass < 2 && !gHeldSkinInfo; ++pass) {
+        uintptr_t begin = pass == 0 ? 0x98 : 0x10;
+        uintptr_t end = pass == 0 ? 0x98 : 0x180;
+        for (uintptr_t off = begin; off <= end; off += sizeof(void*)) {
+            void* info = *reinterpret_cast<void**>((uintptr_t)weapon + off);
+            if (!SkinPtrOk(info) || !SkinPtrOk(reinterpret_cast<void*>((uintptr_t)info + 0x38))) continue;
+            int id = *reinterpret_cast<int*>((uintptr_t)info + 0x14);
+            if (id != itemId) continue;
+            gHeldSkinInfo = info;
+            gHeldSkinId = *reinterpret_cast<uint32_t*>((uintptr_t)info + 0x34);
+            gHeldDefaultSkin = *reinterpret_cast<int*>((uintptr_t)info + 0x38);
+            break;
+        }
+    }
+    if (gHeldSkinId == 0 && fn_GetCurSkinID) gHeldSkinId = fn_GetCurSkinID(weapon);
 
     bool rebuild = itemId != gHeldQueryWeapon;
-    if (!rebuild && (gHeldConf == nullptr || gHeldSkinCount == 0)) {
+    if (!rebuild && gHeldSkinCount == 0) {
         if (++gSkinRetry < 45) return;
         gSkinRetry = 0;
         rebuild = true;
@@ -159,19 +176,8 @@ static void RefreshHeldWeaponSkins() {
     gSkinRetry = 0;
     gHeldQueryWeapon = itemId;
     gHeldSkinCount = 0;
-    gHeldConf = nullptr;
-    gHeldDefaultSkin = 0;
     gHeldBaseId = (uint32_t)itemId;
 
-    if (fn_GetWeaponConf) {
-        void* conf = fn_GetWeaponConf((uint32_t)itemId);
-        if (SkinPtrOk(conf)) {
-            gHeldConf = conf;
-            uint32_t base = *reinterpret_cast<uint32_t*>((uintptr_t)conf + 0x34);
-            gHeldDefaultSkin = *reinterpret_cast<int*>((uintptr_t)conf + 0x38);
-            if (base != 0) gHeldBaseId = base;
-        }
-    }
     if (fn_GetBaseWeaponID) {
         uint32_t resolved = fn_GetBaseWeaponID((uint32_t)itemId);
         if (resolved != 0) gHeldBaseId = resolved;
@@ -665,10 +671,11 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                             snprintf(label, sizeof(label), "%u", gHeldSkinChoices[i]);
                             if (ImGui::Selectable(label, gWeaponSkinId == gHeldSkinChoices[i])) {
                                 gWeaponSkinId = gHeldSkinChoices[i];
+                                gHeldSkinId = gWeaponSkinId;
                                 gHeldDefaultSkin = (int)gWeaponSkinId;
-                                checkboxStates["SKINSWAP"] = true;
-                                if (SkinPtrOk(gHeldConf)) {
-                                    *reinterpret_cast<int*>((uintptr_t)gHeldConf + 0x38) = gHeldDefaultSkin;
+                                if (SkinPtrOk(gHeldSkinInfo)) {
+                                    *reinterpret_cast<uint32_t*>((uintptr_t)gHeldSkinInfo + 0x34) = gWeaponSkinId;
+                                    *reinterpret_cast<int*>((uintptr_t)gHeldSkinInfo + 0x38) = gHeldDefaultSkin;
                                 }
                             }
                         }

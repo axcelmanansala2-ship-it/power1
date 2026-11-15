@@ -479,7 +479,7 @@ static void* (*fn_GetConceptList)(uint32_t baseWeaponId) = nullptr;
 static void* (*fn_GetCamosByConcept)(uint32_t conceptId) = nullptr;
 static void* (*fn_CurrentWeapon)() = nullptr;
 static int (*fn_GetItemID)(void* weapon) = nullptr;
-static void* (*fn_GetWeaponConf)(uint32_t weaponId) = nullptr;
+static uint32_t (*fn_GetCurSkinID)(void* weapon) = nullptr;
 
 static bool SkinSwapOn() {
     return checkboxStates["SKINSWAP"];
@@ -635,7 +635,7 @@ static void hooking() {
     fn_GetCamosByConcept = (void* (*)(uint32_t))(libunity_base + GET_OFF("0x85D4C74"));
     fn_CurrentWeapon = (void* (*)())(libunity_base + GET_OFF("0x80167E8"));
     fn_GetItemID = (int (*)(void*))(libunity_base + GET_OFF("0xC0D0088"));
-    fn_GetWeaponConf = (void* (*)(uint32_t))(libunity_base + GET_OFF("0xD90B7BC"));
+    fn_GetCurSkinID = (uint32_t (*)(void*))(libunity_base + GET_OFF("0x5471B10"));
 
 BYPASS("0x204218"); 
 BYPASS("0x45B334");  
@@ -676,28 +676,6 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0xC0B4458")), (void*)hook_GetMaxFov_1p,
 
 // Fast Swim
 DOSHOOK((void*)(libunity_base + GET_OFF("0x5597B14")), (void*)hook_CalcSwimmingSpeedScale, (void**)&orig_CalcSwimmingSpeedScale);
-
-// Skin unlock. Dump 1.6.59.cs, libunity.so. Off until SKINUNLOCK.
-DOSHOOK((void*)(libunity_base + GET_OFF("0x5A4CBFC")), (void*)hook_Loadout_IsHasInventoryData, (void**)&orig_Loadout_IsHasInventoryData);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x7846454")), (void*)hook_Squad_IsHasInventoryData, (void**)&orig_Squad_IsHasInventoryData);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xACAFD44")), (void*)hook_Own_IsHasInventoryData, (void**)&orig_Own_IsHasInventoryData);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x7844C08")), (void*)hook_IsOwnPermanentItem, (void**)&orig_IsOwnPermanentItem);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x5A2E4E4")), (void*)hook_IsCharacterLocked, (void**)&orig_IsCharacterLocked);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x5A2E6EC")), (void*)hook_IsLockBaseRole, (void**)&orig_IsLockBaseRole);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x86E4464")), (void*)hook_IsShowLockIcon, (void**)&orig_IsShowLockIcon);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAAB6CFC")), (void*)hook_IsSkinCamoConceptUnlocked, (void**)&orig_IsSkinCamoConceptUnlocked);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAAB7048")), (void*)hook_CamosConceptUnlocked, (void**)&orig_CamosConceptUnlocked);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAAB7228")), (void*)hook_SpecialCamoUnlocked, (void**)&orig_SpecialCamoUnlocked);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x982A17C")), (void*)hook_IsWeaponSkinUnlock, (void**)&orig_IsWeaponSkinUnlock);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x752BD90")), (void*)hook_IsOwnedAppearance, (void**)&orig_IsOwnedAppearance);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xBAE6714")), (void*)hook_CanEuippedRoleSkin, (void**)&orig_CanEuippedRoleSkin);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xBAE6794")), (void*)hook_CanEuippedRoleSkin2, (void**)&orig_CanEuippedRoleSkin2);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x5F53644")), (void*)hook_CanEquipRoleSkin, (void**)&orig_CanEquipRoleSkin);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x5471B10")), (void*)hook_Weapon_get_CurSkinID, (void**)&orig_Weapon_get_CurSkinID);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xA0C365C")), (void*)hook_get_NetSuitID, (void**)&orig_get_NetSuitID);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x96EEAE4")), (void*)hook_GetModelAssetID, (void**)&orig_GetModelAssetID);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x96EF468")), (void*)hook_GetModelAssetID2, (void**)&orig_GetModelAssetID2);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x96EFD68")), (void*)hook_SkinDoChange, (void**)&orig_SkinDoChange);
 
 // Graphics
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAD9D4")), (void*)hook_SetEnableVSync, (void**)&orig_SetEnableVSync);
