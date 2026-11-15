@@ -149,8 +149,8 @@ static void RefreshHeldWeaponSkins() {
     gHeldWeaponId = itemId;
     if (orig_Weapon_get_CurSkinID) gHeldSkinId = orig_Weapon_get_CurSkinID(weapon);
 
-    bool rebuild = itemId != gHeldQueryWeapon || gHeldConf == nullptr;
-    if (!rebuild && gHeldSkinCount == 0) {
+    bool rebuild = itemId != gHeldQueryWeapon;
+    if (!rebuild && (gHeldConf == nullptr || gHeldSkinCount == 0)) {
         if (++gSkinRetry < 45) return;
         gSkinRetry = 0;
         rebuild = true;
