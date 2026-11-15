@@ -1,0 +1,6 @@
+obj/
+libs/
+.cxx/
+.externalNativeBuild/
+*.o
+local.properties
