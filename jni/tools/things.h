@@ -76,31 +76,24 @@ bool CustomSliderFloat(const char* label, float* v, float v_min, float v_max, co
 
 int DrawMacOSHeaderButtons()
 {
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    ImVec2 winPos = ImGui::GetWindowPos();
-    ImVec2 winSize = ImGui::GetWindowSize();
-    const float btn = 46.0f;
-    const float gap = 8.0f;
-    const float top = winPos.y + 10.0f;
-    const float xClose = winPos.x + winSize.x - btn - 12.0f;
-    const float xMin = xClose - btn - gap;
+    const float btn = 44.0f;
+    float right = ImGui::GetWindowContentRegionMax().x - btn * 2.0f - 8.0f;
+    if (right < ImGui::GetCursorPosX()) right = ImGui::GetCursorPosX();
+    ImGui::SetCursorPosX(right);
 
-    auto paint = [&](const char* id, ImVec2 pos, ImU32 fill, const char* glyph) -> bool {
-        ImGui::SetCursorScreenPos(pos);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.08f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.16f));
-        bool hit = ImGui::Button(id, ImVec2(btn, btn));
-        ImGui::PopStyleColor(3);
-        draw->AddRectFilled(pos, ImVec2(pos.x + btn, pos.y + btn), fill, 12.0f);
-        ImVec2 ts = ImGui::CalcTextSize(glyph);
-        draw->AddText(ImVec2(pos.x + (btn - ts.x) * 0.5f, pos.y + (btn - ts.y) * 0.5f), IM_COL32(20, 20, 20, 255), glyph);
-        return hit;
-    };
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.16f, 0.18f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.26f, 0.28f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.34f, 0.34f, 0.36f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
 
     int action = 0;
-    if (paint("##min_menu", ImVec2(xMin, top), IM_COL32(255, 196, 64, 255), "-")) action = 1;
-    if (paint("##close_menu", ImVec2(xClose, top), IM_COL32(255, 92, 85, 255), "X")) action = 2;
+    if (ImGui::Button("-", ImVec2(btn, btn))) action = 1;
+    ImGui::SameLine(0.0f, 8.0f);
+    if (ImGui::Button("X", ImVec2(btn, btn))) action = 2;
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(4);
     return action;
 }
 

@@ -96,24 +96,8 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 
 EGLBoolean (*orig_eglSwapBuffers)(...);
 static void AccelForce120(EGLDisplay dpy) {
-    if (!checkboxStates["FRAME120"]) return;
-    eglSwapInterval(dpy, 0);
-    static int tick = 0;
-    if ((tick++ % 15) != 0) return;
-    using SetInt = void (*)(int);
-    static SetInt setRate = nullptr;
-    static SetInt setVsync = nullptr;
-    static bool resolved = false;
-    if (!resolved) {
-        resolved = true;
-        uintptr_t logic = getAbsoluteAddress(DOS("liblogic.so"), 0);
-        if (logic) {
-            setRate = reinterpret_cast<SetInt>(logic + 0x138ac64);
-            setVsync = reinterpret_cast<SetInt>(logic + 0x12ee960);
-        }
-    }
-    if (setRate) setRate(120);
-    if (setVsync) setVsync(0);
+    if (checkboxStates["FRAME120"]) eglSwapInterval(dpy, 0);
+    ApplyDumpPerf();
 }
 
 EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
@@ -321,7 +305,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
 {
     ImGui::SetWindowFontScale(uiScale);
     if (DrawMacOSHeaderButtons()) isToggled = false;
-    ImGui::Dummy(ImVec2(0, 10));
+    ImGui::Dummy(ImVec2(0, 6));
     
     ImGui::BeginChild("##ScrollablePage", ImVec2(-1, -1), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
     
@@ -544,9 +528,9 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             {
                 ImGui::BeginGroupPanel("Performance", ImVec2(-1, 0));
                 ImGui::Columns(2, nullptr, false);
-                g_widgets.checkbox("Force 120 FPS", &checkboxStates["FRAME120"]);
+                g_widgets.checkbox("120 FPS", &checkboxStates["FRAME120"]);
                 ImGui::NextColumn();
-                g_widgets.checkbox("Force 40 Fps", &checkboxStates["FRAME40"]);
+                g_widgets.checkbox("Super low graphics", &checkboxStates["LOWGFX"]);
                 ImGui::NextColumn();
                 g_widgets.checkbox("Hand Cam Mode", &checkboxStates["HAND::CAM"]);
                 ImGui::NextColumn();
