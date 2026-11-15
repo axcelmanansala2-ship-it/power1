@@ -474,6 +474,9 @@ static bool hook_CanEquipRoleSkin(void* playerInfo, uint32_t itemId) {
 // Typed IDs. Dump 1.6.59 has no skin catalog; RoleSkinConfig.ID and WeaponCamosConfig.CamoItemID are filled at runtime.
 uint32_t gWeaponSkinId = 0;
 uint32_t gSuitSkinId = 0;
+static uint32_t (*fn_GetBaseWeaponID)(uint32_t weaponID) = nullptr;
+static void* (*fn_GetConceptList)(uint32_t baseWeaponId) = nullptr;
+static void* (*fn_GetCamosByConcept)(uint32_t conceptId) = nullptr;
 
 static bool SkinSwapOn() {
     return checkboxStates["SKINSWAP"];
@@ -624,6 +627,9 @@ static void hooking() {
     if (libunity_base == 0) {
         libunity_base = getAbsoluteAddress(DOS("libunity.so"), 0); 
     }
+    fn_GetBaseWeaponID = (uint32_t (*)(uint32_t))(libunity_base + GET_OFF("0x5A4C18C"));
+    fn_GetConceptList = (void* (*)(uint32_t))(libunity_base + GET_OFF("0x85D45CC"));
+    fn_GetCamosByConcept = (void* (*)(uint32_t))(libunity_base + GET_OFF("0x85D4C74"));
 
 BYPASS("0x204218"); 
 BYPASS("0x45B334");  
