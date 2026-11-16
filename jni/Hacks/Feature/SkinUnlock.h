@@ -10,6 +10,10 @@
 //   WeaponConfConfig.IsDouble is new at 0x44.
 //     WinnerCircleWeaponMountType moved to 0x48 and is not written.
 //   WeaponConfConfig.get_Name                  0x85D6744
+//   RoleConfConfig (characters): BaseCharacterID 0x10, ID 0x34,
+//     ColorID 0x22, RolePackID 0x44, get_Name 0xBAE8444
+//   CharacterModelConfig.ItemID ulong 0x78, mesh ints 0x18..0x44
+//   ItemResourceConfig.AvatarModelID ulong 0x28
 
 #include <atomic>
 #include <cstdint>
@@ -32,6 +36,9 @@ static constexpr uintptr_t kSkinRvaMythicSight    = 0x8163A08;
 static constexpr uintptr_t kSkinRvaKillEffect     = 0x8148794;
 static constexpr uintptr_t kSkinRvaItemResource   = 0x8145590;
 static constexpr uintptr_t kSkinRvaWeaponName     = 0x85D6744;
+static constexpr uintptr_t kSkinRvaRoleConf       = 0xBAE6244;
+static constexpr uintptr_t kSkinRvaRoleName       = 0xBAE8444;
+static constexpr uintptr_t kSkinRvaCharModel      = 0xA30A6B8;
 
 struct SkinRow {
     std::string name;
@@ -54,14 +61,23 @@ struct SkinRow {
     int fx = 0;
     int invModel = 0;
     int modelRaw = 0;
+    int kind = 0;
+    int arm = 0;
+    int suit = 0;
+    int holo = 0;
+    int pack = 0;
+    int hasModel = 0;
+    int modelF[12] = {};
 };
 
 static std::vector<void*> gSkinInv, gSkinExtra, gSkinFire, gSkinConf, gSkinAsset;
 static std::vector<void*> gSkinArmor, gSkinSight, gSkinKill, gSkinRes;
+static std::vector<void*> gSkinRole, gSkinModel;
 static pthread_mutex_t gSkinMu = PTHREAD_MUTEX_INITIALIZER;
 static std::vector<SkinRow> gSkinRows;
 static std::atomic<int> gSkinState{0};
 static int gSkinNameCursor = 0;
+static int gSkinCharCursor = 0;
 static char gSkinSearch[64] = "";
 static std::vector<char> gSkinPicked;
 
@@ -69,7 +85,7 @@ struct SkinHookSlot {
     void (*orig)(void*);
     std::vector<void*>* vec;
 };
-static SkinHookSlot gSkinSlots[9];
+static SkinHookSlot gSkinSlots[11];
 
 template <int N>
 static void SkinCtorHook(void* self) {
@@ -89,6 +105,11 @@ static bool SkinRdOk(void* p, uintptr_t off) {
 static int SkinRdI(void* p, uintptr_t off) {
     if (!SkinRdOk(p, off)) return 0;
     return *(int*)((uintptr_t)p + off);
+}
+
+static uint64_t SkinRdU64(void* p, uintptr_t off) {
+    if (!SkinRdOk(p, off) || !SkinRdOk(p, off + 4)) return 0;
+    return *(uint64_t*)((uintptr_t)p + off);
 }
 
 static uint8_t SkinRdB(void* p, uintptr_t off) {
@@ -115,9 +136,9 @@ static int SkinLastInt(void* obj, uintptr_t off) {
     return arr->m_Items[n - 1];
 }
 
-static std::string SkinConfName(void* obj) {
-    if (!libunity_base || !Tools::IsPtrValid(obj)) return {};
-    auto fn = (String* (*)(void*))(libunity_base + kSkinRvaWeaponName);
+static std::string SkinConfName(void* obj, uintptr_t rva = kSkinRvaWeaponName) {
+    if (!libunity_base || !rva || !Tools::IsPtrValid(obj)) return {};
+    auto fn = (String* (*)(void*))(libunity_base + rva);
     String* s = fn(obj);
     if (!Tools::IsPtrValid(s)) return {};
     if (s->length <= 0 || s->length > 48) return {};
@@ -170,9 +191,55 @@ static void SkinInstallHooks() {
     SkinHookOne(6, kSkinRvaMythicSight, &gSkinSight, (void*)SkinCtorHook<6>);
     SkinHookOne(7, kSkinRvaKillEffect, &gSkinKill, (void*)SkinCtorHook<7>);
     SkinHookOne(8, kSkinRvaItemResource, &gSkinRes, (void*)SkinCtorHook<8>);
+    SkinHookOne(9, kSkinRvaRoleConf, &gSkinRole, (void*)SkinCtorHook<9>);
+    SkinHookOne(10, kSkinRvaCharModel, &gSkinModel, (void*)SkinCtorHook<10>);
+}
+
+static const uintptr_t kCharModelOff[12] = {
+    0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40, 0x44
+};
+
+static void SkinApplyChar(const SkinRow& row) {
+    if (!row.baseId || row.baseId == row.skinId) return;
+    pthread_mutex_lock(&gSkinMu);
+    std::vector<void*> roles = gSkinRole;
+    std::vector<void*> models = gSkinModel;
+    std::vector<void*> res = gSkinRes;
+    pthread_mutex_unlock(&gSkinMu);
+
+    for (void* role : roles) {
+        if (SkinRdI(role, 0x34) != row.baseId) continue;
+        if (row.arm) SkinWrI(role, 0x14, row.arm);
+        if (row.suit) SkinWrI(role, 0x18, row.suit);
+        if (row.holo) SkinWrI(role, 0x1C, row.holo);
+        SkinWrB(role, 0x22, (uint8_t)row.color);
+        if (row.pack) SkinWrI(role, 0x44, row.pack);
+    }
+
+    uint64_t baseAvatar = 0;
+    for (void* r : res) {
+        if (SkinRdI(r, 0x1C) != row.baseId) continue;
+        baseAvatar = SkinRdU64(r, 0x28);
+        if (row.fx) SkinWrI(r, 0x18, row.fx);
+        if (row.invModel) SkinWrI(r, 0x20, row.invModel);
+        if (row.modelRaw) SkinWrI(r, 0x24, row.modelRaw);
+        break;
+    }
+    if (!baseAvatar || !row.hasModel) return;
+    for (void* m : models) {
+        if (SkinRdU64(m, 0x78) != baseAvatar) continue;
+        for (int i = 0; i < 12; ++i) {
+            if (row.modelF[i]) SkinWrI(m, kCharModelOff[i], row.modelF[i]);
+        }
+        break;
+    }
 }
 
 static void SkinApplyRow(const SkinRow& row) {
+    if (row.kind == 1) {
+        SkinApplyChar(row);
+        return;
+    }
     if (row.baseId == 0 && row.skinId == 0) return;
     pthread_mutex_lock(&gSkinMu);
     std::vector<void*> inv = gSkinInv;
@@ -236,9 +303,10 @@ static void SkinScanMain() {
         pthread_mutex_lock(&gSkinMu);
         int n = (int)gSkinConf.size();
         int inv = (int)gSkinInv.size();
+        int roles = (int)gSkinRole.size();
         pthread_mutex_unlock(&gSkinMu);
         if (n > 100 && n == last && inv > 0) {
-            if (++stable >= 5) break;
+            if (++stable >= 5 && (roles > 0 || stable >= 40)) break;
         } else {
             stable = 0;
         }
@@ -256,6 +324,8 @@ static void SkinScanMain() {
     std::vector<void*> sight = gSkinSight;
     std::vector<void*> kill = gSkinKill;
     std::vector<void*> res = gSkinRes;
+    std::vector<void*> roles = gSkinRole;
+    std::vector<void*> models = gSkinModel;
     pthread_mutex_unlock(&gSkinMu);
 
     if (conf.empty() || inv.empty()) {
@@ -373,27 +443,90 @@ static void SkinScanMain() {
         rows.push_back(std::move(row));
     }
 
+    std::unordered_map<uint64_t, int> modelAt;
+    modelAt.reserve(models.size());
+    struct CharMesh { uint64_t itemId; int f[12]; };
+    std::vector<CharMesh> meshes;
+    meshes.reserve(models.size());
+    for (void* m : models) {
+        uint64_t itemId = SkinRdU64(m, 0x78);
+        if (!itemId) continue;
+        CharMesh mesh;
+        mesh.itemId = itemId;
+        for (int i = 0; i < 12; ++i) mesh.f[i] = SkinRdI(m, kCharModelOff[i]);
+        modelAt.emplace(itemId, (int)meshes.size());
+        meshes.push_back(mesh);
+    }
+    for (void* role : roles) {
+        int id = SkinRdI(role, 0x34);
+        int baseId = SkinRdI(role, 0x10);
+        if (id == 0) continue;
+        int color = SkinRdB(role, 0x22);
+        char stub[40];
+        snprintf(stub, sizeof(stub), "%sid %d", SkinTag(color), id);
+        SkinRow row;
+        row.kind = 1;
+        row.name = stub;
+        row.low = SkinLower(row.name);
+        row.conf = role;
+        row.baseId = baseId;
+        row.skinId = id;
+        row.color = color;
+        row.arm = SkinRdI(role, 0x14);
+        row.suit = SkinRdI(role, 0x18);
+        row.holo = SkinRdI(role, 0x1C);
+        row.pack = SkinRdI(role, 0x44);
+        auto rit = resById.find(id);
+        if (rit != resById.end()) {
+            row.fx = SkinRdI(rit->second, 0x18);
+            row.invModel = SkinRdI(rit->second, 0x20);
+            row.modelRaw = SkinRdI(rit->second, 0x24);
+            uint64_t avatar = SkinRdU64(rit->second, 0x28);
+            auto mit = modelAt.find(avatar);
+            if (mit != modelAt.end()) {
+                row.hasModel = 1;
+                for (int i = 0; i < 12; ++i) row.modelF[i] = meshes[mit->second].f[i];
+            }
+        }
+        rows.push_back(std::move(row));
+    }
+
     gSkinNameCursor = 0;
+    gSkinCharCursor = 0;
     gSkinRows = std::move(rows);
     gSkinState.store(2, std::memory_order_release);
+}
+
+static void SkinNameOne(SkinRow& row) {
+    if (!row.conf || row.named) {
+        row.named = true;
+        return;
+    }
+    uintptr_t rva = row.kind == 1 ? kSkinRvaRoleName : kSkinRvaWeaponName;
+    std::string raw = SkinTake(SkinConfName(row.conf, rva).c_str(), 40);
+    if (!raw.empty()) {
+        row.name = std::string(SkinTag(row.color)) + raw;
+        row.low = SkinLower(row.name);
+    }
+    row.named = true;
+    row.conf = nullptr;
 }
 
 static void SkinFillNames() {
     if (gSkinState.load(std::memory_order_acquire) != 2) return;
     int n = (int)gSkinRows.size();
-    int budget = 12;
+    int budget = 16;
+    while (budget > 0 && gSkinCharCursor < n) {
+        while (gSkinCharCursor < n && gSkinRows[gSkinCharCursor].kind != 1)
+            ++gSkinCharCursor;
+        if (gSkinCharCursor >= n) break;
+        SkinNameOne(gSkinRows[gSkinCharCursor++]);
+        --budget;
+    }
     while (budget > 0 && gSkinNameCursor < n) {
         SkinRow& row = gSkinRows[gSkinNameCursor++];
-        std::string raw = SkinTake(SkinConfName(row.conf).c_str(), 40);
-        if (raw.empty()) {
-            row.named = true;
-            --budget;
-            continue;
-        }
-        row.name = std::string(SkinTag(row.color)) + raw;
-        row.low = SkinLower(row.name);
-        row.named = true;
-        row.conf = nullptr;
+        if (row.kind == 1 || row.named) continue;
+        SkinNameOne(row);
         --budget;
     }
 }
