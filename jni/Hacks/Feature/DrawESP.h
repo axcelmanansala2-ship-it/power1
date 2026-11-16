@@ -4,9 +4,59 @@
 #include "ImGui/skeleton.h"
 #include <array>
 #include <cstdio>
+#include <string>
 #pragma once
 std::unordered_map<std::string, int> dropdownStates;
 std::atomic<bool> gMatchLive{false};
+
+void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text);
+
+static std::string WeaponItemName(int itemId) {
+    static std::unordered_map<int, std::string> names;
+    auto found = names.find(itemId);
+    if (found != names.end()) return found->second;
+    std::string name = "Weapon";
+    if (itemId > 0 && Class_ItemConfig_GetItemName) {
+        auto fn = (String* (*)(int, int))Class_ItemConfig_GetItemName;
+        String* text = fn(itemId, 0);
+        if (Tools::IsPtrValid(text) && text->length > 0 && text->length < 40) {
+            const char* utf = text->CString();
+            if (utf && utf[0]) name = utf;
+        }
+    }
+    if (names.size() > 256) names.clear();
+    names[itemId] = name;
+    return name;
+}
+
+static void DrawDroppedWeapons(ImDrawList* draw, Camera* camera, const Vector3& myPos) {
+    if (!checkboxStates["ESP ENABLE"] || !checkboxStates["ESP::WEAPON"]) return;
+    MatchGame* match = GamePlay::get_MatchGame();
+    if (!Tools::IsPtrValid(match)) return;
+    List<DroppedPickUp*>* drops = match->DroppedPickUps();
+    if (!Tools::IsPtrValid(drops)) return;
+    int count = drops->getSize();
+    if (count <= 0 || count > 256) return;
+    DroppedPickUp** items = drops->getItems();
+    if (!Tools::IsPtrValid(items)) return;
+    int drawn = 0;
+    for (int i = 0; i < count && drawn < 48; ++i) {
+        DroppedPickUp* drop = items[i];
+        if (!Tools::IsPtrValid(drop) || drop->HasDespawned() || drop->PickUpType() != 1) continue;
+        Transform* model = drop->Model();
+        if (!Tools::IsPtrValid(model)) continue;
+        Vector3 root = model->get_position();
+        Vector3 screen = camera->WorldToScreenPoint(root);
+        if (screen.z <= 0.0f) continue;
+        float distance = Vector3::Distance(myPos, root);
+        if (distance > 250.0f) continue;
+        char line[80];
+        snprintf(line, sizeof(line), "%s %dm", WeaponItemName(drop->ItemId()).c_str(), (int)distance);
+        ImVec2 textSize = ImGui::CalcTextSize(line);
+        AddTextWithShadow(draw, nullptr, 14.0f, ImVec2(screen.x - textSize.x * 0.5f, glHeight - screen.y - textSize.y), IM_COL32(230, 200, 120, 230), line);
+        drawn++;
+    }
+}
 
 void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text) {
     draw->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 200), text);
@@ -292,6 +342,7 @@ void drawESP__Player(ImDrawList *draw) {
     if (!Tools::IsPtrValid(get_LocalPawn)) return;
     
     Vector3 pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
+    DrawDroppedWeapons(draw, mainCamera, pLocalPawn_rootPos);
            
     List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();
     if (!Tools::IsPtrValid(EnemyPawns) || EnemyPawns->getSize() == 0) return;

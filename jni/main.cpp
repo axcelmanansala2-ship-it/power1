@@ -275,7 +275,7 @@ if (!checkboxStates["HAND::CAM"])
         ImGui::BeginGroup();
         ImGui::Text("FPS %.0f", fps);
         ImGui::SetWindowFontScale(0.72f);
-        ImGui::Text(DOS("ECLIPSE"));
+        ImGui::Text(DOS("Accel"));
         ImGui::SetWindowFontScale(1.0f);
         ImGui::EndGroup();
     }
@@ -407,6 +407,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             g_widgets.checkbox("2D Box", &checkboxStates["ESP BOX"]);
             g_widgets.checkbox("Name", &checkboxStates["ESP NAME"]);
             g_widgets.checkbox("Vehicle", &checkboxStates["ESP::VEHICLE"]);
+            g_widgets.checkbox("Weapon", &checkboxStates["ESP::WEAPON"]);
             g_widgets.checkbox("3D Box", &checkboxStates["3D::BOX"]);
             g_widgets.checkbox("Armor", &checkboxStates["ESP ARMOR"]);
             

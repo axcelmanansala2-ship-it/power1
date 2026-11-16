@@ -47,6 +47,7 @@ uintptr_t Class_AttackableTarget__m_AttackableInfo;
 uintptr_t Class_AttackableTarget__m_Health;
 uintptr_t Class_AttackableTarget__m_MaxHealth;
 uintptr_t Class_BaseGame__m_AllVehicles;
+uintptr_t Class_ItemConfig_GetItemName;
 uintptr_t Class_Pawn_m_IsBot;
 uintptr_t Class_Pawn_m_IsAlive;
 uintptr_t Class_Pawn_m_Mesh;
@@ -310,6 +311,14 @@ class PhysicsVehicle : public Component {
 public:
 };
 
+class DroppedPickUp {
+public:
+    int ItemId() const { return *(int*)((uintptr_t)this + 0x100); }
+    int PickUpType() const { return *(int*)((uintptr_t)this + 0x190); }
+    bool HasDespawned() const { return *(unsigned char*)((uintptr_t)this + 0x1C7) != 0; }
+    Transform* Model() const { return *(Transform**)((uintptr_t)this + 0x150); }
+};
+
 // ------------------- Game Base -------------------
 class BaseGame {
 public:
@@ -334,8 +343,10 @@ public:
         auto fn = (MatchGame* (*)()) (Class_Gameplay_get_MatchGame);
         return fn();
     }
-    
-    
+
+    List<DroppedPickUp*>* DroppedPickUps() {
+        return *(List<DroppedPickUp*>**)((uintptr_t)this + 0x2D0);
+    }
 };
 
 

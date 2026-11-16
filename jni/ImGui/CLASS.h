@@ -81,6 +81,7 @@ static const uintptr_t BoneMap_m_RightBetis = 0x40;
 static const uintptr_t BoneMap_m_RightToe = 0x38; 
 
 
+static const uintptr_t offset_ItemConfig_GetItemName = 0x73BCFB0; // ItemConfigMgr.GetItemName(int, int)
 static const uintptr_t offset_Pawn_get_CurrentWeapon = 0x535BE4C;  // Pawn_get_CurrentWeapon
 static const uintptr_t offset_Inventory_get_CategoryName = 0xC0D0730; // Inventory.get_CategoryName
 }
@@ -115,6 +116,7 @@ extern uintptr_t Class_AttackableTarget__m_AttackableInfo;
 extern uintptr_t Class_AttackableTarget__m_Health;
 extern uintptr_t Class_AttackableTarget__m_MaxHealth;
 extern uintptr_t Class_BaseGame__m_AllVehicles;
+extern uintptr_t Class_ItemConfig_GetItemName;
 extern uintptr_t Class_BaseGame_EnemyPawns;
 extern uintptr_t Class_Pawn_m_LastFireWeaponName;
 extern uintptr_t Class_Pawn_LastCanSeeState;
@@ -247,6 +249,7 @@ Pawn_get_CurrentWeapon = base + FastOffsets::offset_Pawn_get_CurrentWeapon;
     Class_AttackableTarget__m_Health = FastOffsets::Class_AttackableTarget__m_Health_Offset;
     Class_AttackableTarget__m_MaxHealth = FastOffsets::Class_AttackableTarget__m_MaxHealth_Offset;
     Class_BaseGame__m_AllVehicles = FastOffsets::Class_BaseGame__m_AllVehicles_Offset;
+    Class_ItemConfig_GetItemName = base + FastOffsets::offset_ItemConfig_GetItemName;
     Class_BaseGame_EnemyPawns = FastOffsets::Class_BaseGame_EnemyPawns_Offset;
     Class_Pawn_m_LastFireWeaponName = FastOffsets::Class_Pawn_m_LastFireWeaponName_Offset;
 
