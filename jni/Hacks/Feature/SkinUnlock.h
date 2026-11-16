@@ -130,6 +130,16 @@ static void SkinWrB(void* p, uintptr_t off, uint8_t v) {
     *(uint8_t*)((uintptr_t)p + off) = v;
 }
 
+static uint16_t SkinRdU16(void* p, uintptr_t off) {
+    if (!SkinRdOk(p, off)) return 0;
+    return *(uint16_t*)((uintptr_t)p + off);
+}
+
+static void SkinWrU16(void* p, uintptr_t off, uint16_t v) {
+    if (!SkinRdOk(p, off)) return;
+    *(uint16_t*)((uintptr_t)p + off) = v;
+}
+
 static void SkinWrU64(void* p, uintptr_t off, uint64_t v) {
     if (!SkinRdOk(p, off) || !SkinRdOk(p, off + 4)) return;
     *(uint64_t*)((uintptr_t)p + off) = v;
@@ -207,49 +217,69 @@ static const uintptr_t kCharModelOff[12] = {
     0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40, 0x44
 };
 
+static const uintptr_t kCharCopyOff[] = {
+    0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34,
+    0x38, 0x3C, 0x40, 0x44, 0x48, 0x4C, 0x50, 0x54
+};
+
 static int gCharHave = 0;
 
-static void SkinPaintRole(uint32_t dstRole, uint64_t skinAvatar, const SkinRow& row,
+static void* SkinByRole(const std::vector<void*>& v, uint32_t id, uintptr_t off) {
+    for (void* p : v)
+        if ((uint32_t)SkinRdI(p, off) == id) return p;
+    return nullptr;
+}
+
+static void* SkinByAvatar(const std::vector<void*>& models, uint64_t item) {
+    if (!item) return nullptr;
+    for (void* m : models)
+        if (SkinRdU64(m, 0x78) == item) return m;
+    return nullptr;
+}
+
+static void SkinPaintRole(uint32_t dstId, uint64_t skinAvatar, const SkinRow& row,
                           const std::vector<void*>& roles,
                           const std::vector<void*>& models,
                           const std::vector<void*>& res) {
-    if (!dstRole) return;
+    if (!dstId) return;
+    uint32_t skinId = (uint32_t)row.skinId;
+    void* srcRole = SkinByRole(roles, skinId, 0x34);
+    void* dstRole = SkinByRole(roles, dstId, 0x34);
+    if (srcRole && dstRole && srcRole != dstRole) {
+        SkinWrI(dstRole, 0x14, SkinRdI(srcRole, 0x14));
+        SkinWrI(dstRole, 0x18, SkinRdI(srcRole, 0x18));
+        SkinWrI(dstRole, 0x1C, SkinRdI(srcRole, 0x1C));
+        SkinWrB(dstRole, 0x22, SkinRdB(srcRole, 0x22));
+        SkinWrB(dstRole, 0x23, SkinRdB(srcRole, 0x23));
+        SkinWrI(dstRole, 0x44, SkinRdI(srcRole, 0x44));
+    }
+
+    void* srcRes = SkinByRole(res, skinId, 0x1C);
+    void* dstRes = SkinByRole(res, dstId, 0x1C);
+    uint64_t srcAvatar = skinAvatar;
     uint64_t dstAvatar = 0;
-    for (void* r : res) {
-        if ((uint32_t)SkinRdI(r, 0x1C) != dstRole) continue;
-        dstAvatar = SkinRdU64(r, 0x28);
-        if (row.fx) SkinWrI(r, 0x18, row.fx);
-        if (row.invModel) SkinWrI(r, 0x20, row.invModel);
-        if (row.modelRaw) SkinWrI(r, 0x24, row.modelRaw);
-        if (skinAvatar) SkinWrU64(r, 0x28, skinAvatar);
-        break;
+    if (srcRes && !srcAvatar) srcAvatar = SkinRdU64(srcRes, 0x28);
+    if (dstRes) dstAvatar = SkinRdU64(dstRes, 0x28);
+    if (srcRes && dstRes && srcRes != dstRes) {
+        for (uintptr_t off = 0x10; off <= 0x16; off += 2)
+            SkinWrU16(dstRes, off, SkinRdU16(srcRes, off));
+        SkinWrI(dstRes, 0x18, SkinRdI(srcRes, 0x18));
+        SkinWrI(dstRes, 0x20, SkinRdI(srcRes, 0x20));
+        SkinWrI(dstRes, 0x24, SkinRdI(srcRes, 0x24));
+        if (srcAvatar) SkinWrU64(dstRes, 0x28, srcAvatar);
     }
-    for (void* role : roles) {
-        if ((uint32_t)SkinRdI(role, 0x34) != dstRole) continue;
-        if (row.arm) SkinWrI(role, 0x14, row.arm);
-        if (row.suit) SkinWrI(role, 0x18, row.suit);
-        if (row.holo) SkinWrI(role, 0x1C, row.holo);
-        if (row.color) SkinWrB(role, 0x22, (uint8_t)row.color);
-        if (row.pack) SkinWrI(role, 0x44, row.pack);
-        break;
-    }
-    if (!dstAvatar) return;
-    void* dstMesh = nullptr;
-    void* srcMesh = nullptr;
-    for (void* m : models) {
-        uint64_t id = SkinRdU64(m, 0x78);
-        if (!dstMesh && id == dstAvatar) dstMesh = m;
-        if (!srcMesh && skinAvatar && id == skinAvatar) srcMesh = m;
-    }
-    if (srcMesh && dstMesh && srcMesh != dstMesh) {
-        for (int i = 0; i < 12; ++i) {
-            int v = SkinRdI(srcMesh, kCharModelOff[i]);
-            if (v) SkinWrI(dstMesh, kCharModelOff[i], v);
-        }
-    } else if (dstMesh && row.hasModel) {
-        for (int i = 0; i < 12; ++i) {
-            if (row.modelF[i]) SkinWrI(dstMesh, kCharModelOff[i], row.modelF[i]);
-        }
+
+    void* srcMesh = SkinByAvatar(models, srcAvatar);
+    void* dstMesh = SkinByAvatar(models, dstAvatar);
+    if (!srcMesh || !dstMesh || srcMesh == dstMesh) return;
+    SkinWrB(dstMesh, 0x10, SkinRdB(srcMesh, 0x10));
+    SkinWrB(dstMesh, 0x11, SkinRdB(srcMesh, 0x11));
+    SkinWrI(dstMesh, 0x14, SkinRdI(srcMesh, 0x14));
+    for (uintptr_t off : kCharCopyOff)
+        SkinWrI(dstMesh, off, SkinRdI(srcMesh, off));
+    if (SkinRdOk(srcMesh, 0x70) && SkinRdOk(dstMesh, 0x70) &&
+        SkinRdOk(srcMesh, 0x74) && SkinRdOk(dstMesh, 0x74)) {
+        *(void**)((uintptr_t)dstMesh + 0x70) = *(void**)((uintptr_t)srcMesh + 0x70);
     }
 }
 
