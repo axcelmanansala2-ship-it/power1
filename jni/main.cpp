@@ -553,7 +553,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 
                 ImGui::Columns(1);
                 ImGui::Spacing();
-                SLIDER("Low level", &seekbarValues["LOW::GFX"], 0.0f, 100.0f);
+                SLIDER("Low level", &seekbarValues["LOW::GFX"], 0.0f, 500.0f);
                 ImGui::EndGroupPanel();
 
                 ImGui::Spacing();

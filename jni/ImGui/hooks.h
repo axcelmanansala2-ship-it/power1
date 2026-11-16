@@ -1258,7 +1258,7 @@ static LowGfxFns gLowGfxFns;
 
 static int LowGfxTargetTexLimit() {
     if (!checkboxStates["LOWGFX"]) return -1;
-    float t = seekbarValues["LOW::GFX"] / 100.f;
+    float t = seekbarValues["LOW::GFX"] / 500.f;
     if (t < 0.02f) return 0;
     int tex = (int)(t * 3.f + 0.5f);
     if (tex < 1) tex = 1;
@@ -1379,7 +1379,7 @@ static void ApplyLowGfx() {
         LowGfxRestore();
         return;
     }
-    float t = seekbarValues["LOW::GFX"] / 100.f;
+    float t = seekbarValues["LOW::GFX"] / 500.f;
     if (t < 0.f) t = 0.f;
     if (t > 1.f) t = 1.f;
     if (!gLowGfx.have) {
