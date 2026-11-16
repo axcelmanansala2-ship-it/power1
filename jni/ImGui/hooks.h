@@ -367,26 +367,6 @@ static float hook_CalcSwimmingSpeedScale(void *instance) {
     return orig_CalcSwimmingSpeedScale(instance);
 }
 
-static float (*orig_get_AimingWorldFov)(void*) = nullptr;
-static float hook_get_AimingWorldFov(void* weapon) {
-    float aim = orig_get_AimingWorldFov ? orig_get_AimingWorldFov(weapon) : 40.f;
-    if (!checkboxStates["SCOPE::BR"]) return aim;
-    float br = seekbarValues["FOV"];
-    if (br < 30.f) br = 55.f;
-    float target = aim + (br - aim) * 0.4f;
-    if (target < aim) target = aim;
-    if (br > aim && target < aim + 8.f) target = aim + 8.f;
-    if (br > aim && target > br) target = br;
-    return target;
-}
-
-static void ApplyScopeBr() {
-    static bool hooked = false;
-    if (!checkboxStates["SCOPE::BR"] || hooked || !libunity_base) return;
-    DOSHOOK((void*)(libunity_base + GET_OFF("0x54B6548")), (void*)hook_get_AimingWorldFov, (void**)&orig_get_AimingWorldFov);
-    hooked = true;
-}
-
 //FOV BR
 static float (*orig_GetMaxFov_3p)(void *instance) = nullptr;
 static float hook_GetMaxFov_3p(void *instance) {

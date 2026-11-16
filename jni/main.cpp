@@ -556,7 +556,6 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 ImGui::TextUnformatted("High  4    Very High  5    Extreme  6");
                 ImGui::Spacing();
                 g_widgets.checkbox("Force Very Low", &checkboxStates["GFX::LEVEL"]);
-                g_widgets.checkbox("BR scope POV", &checkboxStates["SCOPE::BR"]);
                 ImGui::EndGroupPanel();
 
                 ImGui::Spacing();
@@ -626,7 +625,6 @@ ImGui::PopStyleVar(3);
 
 if (g_Initialized) {
     ApplyFpsBoost();
-    ApplyScopeBr();
     ApplyGraphicsLevel();
     ApplyLowGfx();
 }
