@@ -1249,6 +1249,43 @@ struct LowGfxFns {
 };
 static LowGfxFns gLowGfxFns;
 
+static int LowGfxTargetTexLimit() {
+    if (!checkboxStates["LOWGFX"]) return -1;
+    float t = seekbarValues["LOW::GFX"] / 100.f;
+    if (t < 0.02f) return 0;
+    int tex = (int)(t * 3.f + 0.5f);
+    if (tex < 1) tex = 1;
+    if (tex > 3) tex = 3;
+    return tex;
+}
+
+static void LowGfxApplyTextureGroups() {
+    if (!LowGfxResolveSystemSetting() || !gLowGfxSysInst) return;
+    void* sys = gLowGfxSysInst();
+    if (!sys) return;
+    static void (*apply)(void*) = nullptr;
+    if (!apply) {
+        uintptr_t base = libunity_base ? libunity_base : (uintptr_t)getAbsoluteAddress(DOS("libunity.so"), 0);
+        if (!base) return;
+        apply = (void (*)(void*))(base + 0xAFB2C0C);
+    }
+  if (apply) apply(sys);
+}
+
+static int (*orig_get_masterTextureLimit)();
+static int hook_get_masterTextureLimit() {
+    int forced = LowGfxTargetTexLimit();
+    if (forced >= 0) return forced;
+    return orig_get_masterTextureLimit ? orig_get_masterTextureLimit() : 0;
+}
+
+static void (*orig_set_masterTextureLimit)(int);
+static void hook_set_masterTextureLimit(int value) {
+    int forced = LowGfxTargetTexLimit();
+    if (forced >= 1) value = forced;
+    if (orig_set_masterTextureLimit) orig_set_masterTextureLimit(value);
+}
+
 static bool LowGfxBind() {
     if (gLowGfxFns.ready) return true;
     uintptr_t base = libunity_base ? libunity_base : (uintptr_t)getAbsoluteAddress(DOS("libunity.so"), 0);
@@ -1339,10 +1376,9 @@ static void ApplyLowGfx() {
         gLowGfx.waterPve = gLowGfxFns.getWaterPve();
         gLowGfx.have = true;
     }
-    int tex = (int)(t * 2.f + 0.5f);
+    int tex = LowGfxTargetTexLimit();
     if (tex < 0) tex = 0;
-    if (tex > 2) tex = 2;
-    gLowGfxFns.setTex(tex);
+    if (gLowGfxFns.setTex) gLowGfxFns.setTex(tex);
     static int gLowGfxAppliedQual = -2;
     if (!checkboxStates["LOWGFX"]) gLowGfxAppliedQual = -2;
     if (gLowGfxFns.setQual) {
@@ -1354,17 +1390,24 @@ static void ApplyLowGfx() {
     }
     static int gLowGfxAppliedSys = -1;
     if (!checkboxStates["LOWGFX"]) gLowGfxAppliedSys = -1;
-    if (LowGfxResolveSystemSetting() && t >= 0.34f) {
-        int lvl = t >= 0.67f ? 1 : 2;
+    if (LowGfxResolveSystemSetting() && t >= 0.2f) {
+        int lvl = t >= 0.5f ? 1 : 2;
         if (lvl != gLowGfxAppliedSys) {
             void* sys = gLowGfxSysInst();
             if (sys && gLowGfxSetSysLevel) {
                 gLowGfxSetSysLevel(sys, lvl, false);
                 gLowGfxAppliedSys = lvl;
+                LowGfxApplyTextureGroups();
             }
         }
     } else if (gLowGfxAppliedSys != -1) {
         gLowGfxAppliedSys = -1;
+    }
+    static bool gLowGfxTexGroups = false;
+    if (!checkboxStates["LOWGFX"]) gLowGfxTexGroups = false;
+    if (tex >= 1 && !gLowGfxTexGroups) {
+        LowGfxApplyTextureGroups();
+        gLowGfxTexGroups = true;
     }
     gLowGfxFns.setAniso(t >= 0.34f ? 0 : gLowGfx.aniso);
     bool flat = t >= 0.34f;
@@ -1507,6 +1550,10 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0xC2BDF40")), (void*)hook_GetShotSpread
 
 // Wall shot: local gun keeps traveling after cover
 DOSHOOK((void*)(libunity_base + GET_OFF("0xD529DDC")), (void*)hook_get_MaxThroughWall, (void**)&orig_get_MaxThroughWall);
+
+// Block textures: game cannot raise masterTextureLimit while super low graphics is on
+DOSHOOK((void*)(libunity_base + GET_OFF("0x53295B4")), (void*)hook_get_masterTextureLimit, (void**)&orig_get_masterTextureLimit);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x53295C4")), (void*)hook_set_masterTextureLimit, (void**)&orig_set_masterTextureLimit);
 
 // No Shake
 DOSHOOK((void*)(libunity_base + GET_OFF("0x669780C")), (void*)&hook_UpdateCameraShake, (void**)&orig_UpdateCameraShake);
