@@ -11,19 +11,27 @@ std::atomic<bool> gMatchLive{false};
 
 void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text);
 
-static std::string WeaponItemName(int itemId) {
+static std::string ReadGameString(String* text) {
+    if (!Tools::IsPtrValid(text) || text->length <= 0 || text->length > 48) return {};
+    const char* utf = text->CString();
+    if (!utf || !utf[0]) return {};
+    return utf;
+}
+
+static std::string WeaponItemName(uintptr_t weaponConf, int itemId) {
     static std::unordered_map<int, std::string> names;
     auto found = names.find(itemId);
-    if (found != names.end()) return found->second;
-    std::string name = "Weapon";
-    if (itemId > 0 && Class_ItemConfig_GetItemName) {
-        auto fn = (String* (*)(int, int))Class_ItemConfig_GetItemName;
-        String* text = fn(itemId, 0);
-        if (Tools::IsPtrValid(text) && text->length > 0 && text->length < 40) {
-            const char* utf = text->CString();
-            if (utf && utf[0]) name = utf;
-        }
+    if (found != names.end() && found->second != "Weapon") return found->second;
+    std::string name;
+    if (Tools::IsPtrValid((void*)weaponConf) && Class_WeaponConf_get_Name) {
+        auto fn = (String* (*)(uintptr_t))Class_WeaponConf_get_Name;
+        name = ReadGameString(fn(weaponConf));
     }
+    if (name.empty() && itemId > 0 && Class_ItemConfig_GetItemName) {
+        auto fn = (String* (*)(int, int))Class_ItemConfig_GetItemName;
+        name = ReadGameString(fn(itemId, 0));
+    }
+    if (name.empty()) name = "Weapon";
     if (names.size() > 256) names.clear();
     names[itemId] = name;
     return name;
@@ -46,9 +54,11 @@ static void DrawWeaponMark(ImDrawList* draw, Camera* camera, const Vector3& myPo
     if (screen.z <= 0.0f) return;
     float x = screen.x;
     float y = glHeight - screen.y;
+    float startY = dropdownStates["#LINE_POS"] == 0 ? (float)glHeight - 3.0f : 20.0f;
+    draw->AddLine(ImVec2(glWidth * 0.5f, startY), ImVec2(x, y), IM_COL32(230, 180, 70, 200), 1.2f);
     draw->AddCircleFilled(ImVec2(x, y), 4.0f, IM_COL32(230, 180, 70, 230), 8);
     char line[80];
-    snprintf(line, sizeof(line), "%s %dm", WeaponItemName(*(int*)(entity + 0x5C)).c_str(), (int)distance);
+    snprintf(line, sizeof(line), "%s %dm", WeaponItemName(weaponConf, *(int*)(entity + 0x5C)).c_str(), (int)distance);
     ImVec2 textSize = ImGui::CalcTextSize(line);
     AddTextWithShadow(draw, nullptr, 14.0f, ImVec2(x - textSize.x * 0.5f, y - 18.0f), IM_COL32(255, 220, 140, 240), line);
     drawn++;
