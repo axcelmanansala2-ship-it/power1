@@ -375,6 +375,11 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
         
         ImGui::NextColumn();
         ImGui::BeginChild("right_content", ImVec2(0, 0), true);
+        MenuKeyEnsure();
+        if (!MenuKeyUnlocked()) {
+            DrawMenuKeyBox();
+            ImGui::TextUnformatted("Menu locked");
+        } else {
         MenuKeyStatusLine();
         ImGui::Separator();
         
@@ -580,6 +585,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
         {
             ImGui::Spacing();
             DrawAnogsTab();
+        }
         }
         ImGui::EndChild();
         ImGui::Columns(1);
