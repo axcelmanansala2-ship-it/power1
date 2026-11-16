@@ -282,6 +282,9 @@ inline WeaponCfg::BoolMap  checkboxStates;
 inline WeaponCfg::FloatMap seekbarValues;
 
 struct _WCInit {
-    _WCInit() { seekbarValues.raw()["MAXDIST"] = 200.f; }
+    _WCInit() {
+        seekbarValues.raw()["MAXDIST"] = 200.f;
+        seekbarValues.raw()["LOW::GFX"] = 100.f;
+    }
 };
 inline _WCInit _wcInit;

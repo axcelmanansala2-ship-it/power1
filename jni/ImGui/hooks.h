@@ -1168,6 +1168,158 @@ static void ApplyWallShot() {
     if (current && current != primary) WallShotKeep(current, false);
 }
 
+struct LowGfxSaved {
+    bool have;
+    int tex;
+    int shadows;
+    float shadowDist;
+    int lights;
+    int aniso;
+    int lod;
+    bool sky;
+    bool bloomBr, bloomMp, bloomPve;
+    bool godBr, godPve;
+    bool waterBr, waterPve;
+};
+static LowGfxSaved gLowGfx;
+
+struct LowGfxFns {
+    bool ready;
+    int (*getTex)();
+    void (*setTex)(int);
+    int (*getShadows)();
+    void (*setShadows)(int);
+    float (*getShadowDist)();
+    void (*setShadowDist)(float);
+    int (*getLights)();
+    void (*setLights)(int);
+    int (*getAniso)();
+    void (*setAniso)(int);
+    int (*getLod)();
+    void (*setLod)(int);
+    bool (*getSky)();
+    void (*setSky)(bool);
+    bool (*getBloomBr)();
+    void (*setBloomBr)(bool);
+    bool (*getBloomMp)();
+    void (*setBloomMp)(bool);
+    bool (*getBloomPve)();
+    void (*setBloomPve)(bool);
+    bool (*getGodBr)();
+    void (*setGodBr)(bool);
+    bool (*getGodPve)();
+    void (*setGodPve)(bool);
+    bool (*getWaterBr)();
+    void (*setWaterBr)(bool);
+    bool (*getWaterPve)();
+    void (*setWaterPve)(bool);
+};
+static LowGfxFns gLowGfxFns;
+
+static bool LowGfxBind() {
+    if (gLowGfxFns.ready) return true;
+    uintptr_t base = libunity_base ? libunity_base : (uintptr_t)getAbsoluteAddress(DOS("libunity.so"), 0);
+    if (!base) return false;
+    gLowGfxFns.getTex = (int (*)())(base + 0x53295B4);
+    gLowGfxFns.setTex = (void (*)(int))(base + 0x53295C4);
+    gLowGfxFns.getShadows = (int (*)())(base + 0x532937C);
+    gLowGfxFns.setShadows = (void (*)(int))(base + 0x5329398);
+    gLowGfxFns.getShadowDist = (float (*)())(base + 0x5329420);
+    gLowGfxFns.setShadowDist = (void (*)(float))(base + 0x5329430);
+    gLowGfxFns.getLights = (int (*)())(base + 0x5329314);
+    gLowGfxFns.setLights = (void (*)(int))(base + 0x5329324);
+    gLowGfxFns.getAniso = (int (*)())(base + 0x53295E0);
+    gLowGfxFns.setAniso = (void (*)(int))(base + 0x53295F0);
+    gLowGfxFns.getLod = (int (*)())(base + 0x533BD8C);
+    gLowGfxFns.setLod = (void (*)(int))(base + 0x533BD9C);
+    gLowGfxFns.getSky = (bool (*)())(base + 0x52ED91C);
+    gLowGfxFns.setSky = (void (*)(bool))(base + 0x52ED92C);
+    gLowGfxFns.getBloomBr = (bool (*)())(base + 0xAFBD104);
+    gLowGfxFns.setBloomBr = (void (*)(bool))(base + 0xAFBD160);
+    gLowGfxFns.getBloomMp = (bool (*)())(base + 0xAFBD358);
+    gLowGfxFns.setBloomMp = (void (*)(bool))(base + 0xAFBD3B4);
+    gLowGfxFns.getBloomPve = (bool (*)())(base + 0xAFBD5AC);
+    gLowGfxFns.setBloomPve = (void (*)(bool))(base + 0xAFBD608);
+    gLowGfxFns.getGodBr = (bool (*)())(base + 0xAFBEBD4);
+    gLowGfxFns.setGodBr = (void (*)(bool))(base + 0xAFBEC30);
+    gLowGfxFns.getGodPve = (bool (*)())(base + 0xAFBEE28);
+    gLowGfxFns.setGodPve = (void (*)(bool))(base + 0xAFBEE84);
+    gLowGfxFns.getWaterBr = (bool (*)())(base + 0xAFBE540);
+    gLowGfxFns.setWaterBr = (void (*)(bool))(base + 0xAFBE59C);
+    gLowGfxFns.getWaterPve = (bool (*)())(base + 0xAFBE734);
+    gLowGfxFns.setWaterPve = (void (*)(bool))(base + 0xAFBE790);
+    gLowGfxFns.ready = true;
+    return true;
+}
+
+static void LowGfxRestore() {
+    if (!gLowGfx.have || !gLowGfxFns.ready) return;
+    gLowGfxFns.setTex(gLowGfx.tex);
+    gLowGfxFns.setShadows(gLowGfx.shadows);
+    gLowGfxFns.setShadowDist(gLowGfx.shadowDist);
+    gLowGfxFns.setLights(gLowGfx.lights);
+    gLowGfxFns.setAniso(gLowGfx.aniso);
+    gLowGfxFns.setLod(gLowGfx.lod);
+    gLowGfxFns.setSky(gLowGfx.sky);
+    gLowGfxFns.setBloomBr(gLowGfx.bloomBr);
+    gLowGfxFns.setBloomMp(gLowGfx.bloomMp);
+    gLowGfxFns.setBloomPve(gLowGfx.bloomPve);
+    gLowGfxFns.setGodBr(gLowGfx.godBr);
+    gLowGfxFns.setGodPve(gLowGfx.godPve);
+    gLowGfxFns.setWaterBr(gLowGfx.waterBr);
+    gLowGfxFns.setWaterPve(gLowGfx.waterPve);
+    gLowGfx.have = false;
+}
+
+static void ApplyLowGfx() {
+    if (!LowGfxBind()) return;
+    if (!checkboxStates["LOWGFX"]) {
+        LowGfxRestore();
+        return;
+    }
+    float t = seekbarValues["LOW::GFX"] / 100.f;
+    if (t < 0.f) t = 0.f;
+    if (t > 1.f) t = 1.f;
+    if (!gLowGfx.have) {
+        gLowGfx.tex = gLowGfxFns.getTex();
+        gLowGfx.shadows = gLowGfxFns.getShadows();
+        gLowGfx.shadowDist = gLowGfxFns.getShadowDist();
+        gLowGfx.lights = gLowGfxFns.getLights();
+        gLowGfx.aniso = gLowGfxFns.getAniso();
+        gLowGfx.lod = gLowGfxFns.getLod();
+        gLowGfx.sky = gLowGfxFns.getSky();
+        gLowGfx.bloomBr = gLowGfxFns.getBloomBr();
+        gLowGfx.bloomMp = gLowGfxFns.getBloomMp();
+        gLowGfx.bloomPve = gLowGfxFns.getBloomPve();
+        gLowGfx.godBr = gLowGfxFns.getGodBr();
+        gLowGfx.godPve = gLowGfxFns.getGodPve();
+        gLowGfx.waterBr = gLowGfxFns.getWaterBr();
+        gLowGfx.waterPve = gLowGfxFns.getWaterPve();
+        gLowGfx.have = true;
+    }
+    int tex = gLowGfx.tex + (int)((3 - gLowGfx.tex) * t + 0.5f);
+    if (tex < 0) tex = 0;
+    if (tex > 3) tex = 3;
+    int lod = gLowGfx.lod + (int)((100 - gLowGfx.lod) * t);
+    if (lod < 100) lod = 100;
+    gLowGfxFns.setTex(tex);
+    gLowGfxFns.setLod(lod);
+    gLowGfxFns.setAniso(t >= 0.34f ? 0 : gLowGfx.aniso);
+    bool flat = t >= 0.34f;
+    gLowGfxFns.setBloomBr(flat ? false : gLowGfx.bloomBr);
+    gLowGfxFns.setBloomMp(flat ? false : gLowGfx.bloomMp);
+    gLowGfxFns.setBloomPve(flat ? false : gLowGfx.bloomPve);
+    gLowGfxFns.setGodBr(flat ? false : gLowGfx.godBr);
+    gLowGfxFns.setGodPve(flat ? false : gLowGfx.godPve);
+    gLowGfxFns.setWaterBr(flat ? false : gLowGfx.waterBr);
+    gLowGfxFns.setWaterPve(flat ? false : gLowGfx.waterPve);
+    bool brutal = t >= 0.67f;
+    gLowGfxFns.setShadows(brutal ? 0 : gLowGfx.shadows);
+    gLowGfxFns.setShadowDist(brutal ? 0.f : gLowGfx.shadowDist);
+    gLowGfxFns.setLights(brutal ? 0 : gLowGfx.lights);
+    gLowGfxFns.setSky(brutal ? true : gLowGfx.sky);
+}
+
 static int (*orig_get_MaxThroughWall)(void* instance);
 static int hook_get_MaxThroughWall(void* instance) {
     if (!orig_get_MaxThroughWall) return 0;

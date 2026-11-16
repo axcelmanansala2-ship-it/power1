@@ -102,6 +102,7 @@ EGLBoolean (*orig_eglSwapBuffers)(...);
 EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
 eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
 eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
+ApplyLowGfx();
 if (!g_Initialized) {
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -552,6 +553,8 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 g_widgets.checkbox("Disable VisCheck", &checkboxStates["DISABLE_VISCHECK"]);
                 
                 ImGui::Columns(1);
+                ImGui::Spacing();
+                SLIDER("Low level", &seekbarValues["LOW::GFX"], 0.0f, 100.0f);
                 ImGui::EndGroupPanel();
 
                 ImGui::Spacing();
