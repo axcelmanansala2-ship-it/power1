@@ -1357,6 +1357,38 @@ static void LowGfxApplyTextureGroups() {
     if (apply) apply(sys);
 }
 
+static void ApplyGraphicsLevel() {
+    static bool applied = false;
+    static int saved = 3;
+    static double next = 0.0;
+    bool on = checkboxStates["GFX::LEVEL"];
+    if (!on && !applied) return;
+    if (!libunity_base) return;
+    if (!LowGfxResolveSystemSetting() || !gLowGfxSysInst || !gLowGfxSetSysLevel || !gLowGfxGetSysLevel) return;
+    void* sys = gLowGfxSysInst();
+    if (!sys) return;
+    auto setQual = (void (*)(int, bool))(libunity_base + 0x53292AC);
+    if (!on) {
+        gLowGfxSetSysLevel(sys, saved, false);
+        setQual(saved > 1 ? saved - 1 : 0, true);
+        LowGfxApplyTextureGroups();
+        applied = false;
+        return;
+    }
+    int cur = gLowGfxGetSysLevel(sys);
+    if (!applied) {
+        saved = (cur >= 1 && cur <= 6) ? cur : 3;
+        applied = true;
+        next = 0.0;
+    }
+    double now = ImGui::GetTime();
+    if (cur == 1 && now < next) return;
+    gLowGfxSetSysLevel(sys, 1, false);
+    setQual(0, true);
+    LowGfxApplyTextureGroups();
+    next = now + 2.0;
+}
+
 static int (*orig_get_masterTextureLimit)();
 static int hook_get_masterTextureLimit() {
     int forced = LowGfxTargetTexLimit();

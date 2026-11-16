@@ -324,6 +324,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             { ICON_FA_MICROCHIP,  "Memory", 3, 0.0f },
             { ICON_FA_BULLSEYE,   "Guns",   7, 0.0f },
             { ICON_FA_COGS,       "Setup",  5, 0.0f },
+            { ICON_FA_IMAGE,      "Graphics", 9, 0.0f },
             { ICON_FA_SHIELD,     "Shield", 8, 0.0f },
         };
         
@@ -579,6 +580,23 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             }
             ImGui::EndChild();
         }
+        if (tab == 9)
+        {
+            ImGui::Spacing();
+            ImGui::BeginChild("##GraphicsLevel", ImVec2(0, 0), true);
+            ImGui::BeginGroupPanel("CODM graphics level", ImVec2(-1, 0));
+            ImGui::TextUnformatted("Very Low  1");
+            ImGui::TextUnformatted("Low  2");
+            ImGui::TextUnformatted("Mid  3");
+            ImGui::TextUnformatted("High  4");
+            ImGui::TextUnformatted("Very High  5");
+            ImGui::TextUnformatted("Extreme  6");
+            ImGui::Spacing();
+            g_widgets.checkbox("Force Very Low", &checkboxStates["GFX::LEVEL"]);
+            ImGui::TextWrapped("Locks the game graphics level to Very Low. Turns off to put the old level back.");
+            ImGui::EndGroupPanel();
+            ImGui::EndChild();
+        }
         if (tab == 7)
         {
             ImGui::Spacing();
@@ -617,6 +635,7 @@ ImGui::PopStyleVar(3);
 
 if (g_Initialized) {
     ApplyFpsBoost();
+    ApplyGraphicsLevel();
     ApplyLowGfx();
 }
 ImGui::Render();
