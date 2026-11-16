@@ -29,11 +29,29 @@ static std::string WeaponItemName(int itemId) {
     return name;
 }
 
-static Vector3 DroppedWeaponPos(uintptr_t data) {
-    Vector3 pos = *(Vector3*)(data + 0x4C);
-    if (!Class_DropData_GetRealPosition) return pos;
-    auto fn = (Vector3 (*)(uintptr_t))Class_DropData_GetRealPosition;
-    return fn(data);
+static void DrawWeaponMark(ImDrawList* draw, Camera* camera, const Vector3& myPos, uintptr_t entity, int& drawn) {
+    if (drawn >= 40 || !Tools::IsPtrValid((void*)entity)) return;
+    if (*(unsigned char*)(entity + 0x6C) == 0) return;
+    uintptr_t weaponConf = *(uintptr_t*)(entity + 0xE0);
+    int configType = *(int*)(entity + 0xA0);
+    int pickType = *(int*)(entity + 0x58);
+    if (!Tools::IsPtrValid((void*)weaponConf) && configType != 1 && pickType != 1) return;
+    Vector3 root = *(Vector3*)(entity + 0x60);
+    Transform* transform = ((Component*)entity)->get_transform();
+    if (Tools::IsPtrValid(transform)) root = transform->get_position();
+    if (root.x == 0.0f && root.y == 0.0f && root.z == 0.0f) return;
+    float distance = Vector3::Distance(myPos, root);
+    if (distance > 400.0f) return;
+    Vector3 screen = camera->WorldToScreenPoint(root);
+    if (screen.z <= 0.0f) return;
+    float x = screen.x;
+    float y = glHeight - screen.y;
+    draw->AddCircleFilled(ImVec2(x, y), 4.0f, IM_COL32(230, 180, 70, 230), 8);
+    char line[80];
+    snprintf(line, sizeof(line), "%s %dm", WeaponItemName(*(int*)(entity + 0x5C)).c_str(), (int)distance);
+    ImVec2 textSize = ImGui::CalcTextSize(line);
+    AddTextWithShadow(draw, nullptr, 14.0f, ImVec2(x - textSize.x * 0.5f, y - 18.0f), IM_COL32(255, 220, 140, 240), line);
+    drawn++;
 }
 
 static void DrawDroppedWeapons(ImDrawList* draw, Camera* camera, const Vector3& myPos) {
@@ -46,35 +64,20 @@ static void DrawDroppedWeapons(ImDrawList* draw, Camera* camera, const Vector3& 
         manager = instance();
     }
     if (!Tools::IsPtrValid((void*)manager)) return;
-    uintptr_t dict = *(uintptr_t*)(manager + 0xB8);
-    if (!Tools::IsPtrValid((void*)dict)) return;
-    uintptr_t entries = *(uintptr_t*)(dict + 0x18);
-    int count = *(int*)(dict + 0x20);
-    if (!Tools::IsPtrValid((void*)entries) || count <= 0 || count > 12000) return;
-    int length = *(int*)(entries + 0x18);
-    if (length <= 0 || count > length) return;
-    uintptr_t slot = entries + 0x20;
+    uintptr_t entities = *(uintptr_t*)(manager + 0x118);
+    if (!Tools::IsPtrValid((void*)entities)) return;
+    uintptr_t values = *(uintptr_t*)(entities + 0x28);
+    int touched = *(int*)(entities + 0x30);
+    if (!Tools::IsPtrValid((void*)values) || touched <= 0) return;
+    int length = *(int*)(values + 0x18);
+    if (length <= 0) return;
+    if (touched > length) touched = length;
+    if (touched > 2000) touched = 2000;
+    uintptr_t slots = values + 0x20;
     int drawn = 0;
-    for (int i = 0; i < count && drawn < 40; ++i, slot += 24) {
-        int hash = *(int*)slot;
-        if (hash < 0) continue;
-        uintptr_t data = *(uintptr_t*)(slot + 16);
-        if (!Tools::IsPtrValid((void*)data)) continue;
-        if (*(unsigned char*)(data + 0xD1) != 0) continue;
-        if (*(unsigned char*)(data + 0x30) != 0) continue;
-        if (*(int*)(data + 0x10) != 1) continue;
-        int itemId = *(int*)(data + 0x1C);
-        Vector3 root = DroppedWeaponPos(data);
-        if (root.x == 0.0f && root.y == 0.0f && root.z == 0.0f) continue;
-        Vector3 screen = camera->WorldToScreenPoint(root);
-        if (screen.z <= 0.0f) continue;
-        float distance = Vector3::Distance(myPos, root);
-        if (distance > 350.0f) continue;
-        char line[80];
-        snprintf(line, sizeof(line), "%s %dm", WeaponItemName(itemId).c_str(), (int)distance);
-        ImVec2 textSize = ImGui::CalcTextSize(line);
-        AddTextWithShadow(draw, nullptr, 14.0f, ImVec2(screen.x - textSize.x * 0.5f, glHeight - screen.y - textSize.y), IM_COL32(230, 200, 120, 230), line);
-        drawn++;
+    for (int i = 0; i < touched && drawn < 40; ++i) {
+        uintptr_t entity = *(uintptr_t*)(slots + (uintptr_t)i * 8);
+        DrawWeaponMark(draw, camera, myPos, entity, drawn);
     }
 }
 
