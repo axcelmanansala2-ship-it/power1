@@ -14,6 +14,7 @@
 #include <sys/syscall.h>
 #include <dlfcn.h>
 #include "dobby/dobby.h"
+#include "ANOGS/Call_IL2Cpp.h"
 
 static constexpr bool kCallMonitor =
 #include "../on/off"
@@ -1175,12 +1176,38 @@ struct LowGfxSaved {
     float shadowDist;
     int lights;
     int aniso;
+    int unityQual;
+    int sysLevel;
     bool sky;
     bool bloomBr, bloomMp, bloomPve;
     bool godBr, godPve;
     bool waterBr, waterPve;
 };
 static LowGfxSaved gLowGfx;
+
+typedef void* (*LowGfxSysInstFn)();
+typedef bool (*LowGfxSetSysLevelFn)(void*, int, bool);
+typedef int (*LowGfxGetSysLevelFn)(void*);
+static LowGfxSysInstFn gLowGfxSysInst = nullptr;
+static LowGfxSetSysLevelFn gLowGfxSetSysLevel = nullptr;
+static LowGfxGetSysLevelFn gLowGfxGetSysLevel = nullptr;
+
+static bool LowGfxResolveSystemSetting() {
+    if (gLowGfxSysInst) return true;
+    static const char* images[] = {"Assembly-CSharp", "Assembly-CSharp.dll"};
+    for (const char* image : images) {
+        void* getInst = Il2CppGetMethodOffset(image, "GameEngine", "SystemSetting", "get_Instance", 0);
+        void* setLvl = Il2CppGetMethodOffset(image, "GameEngine", "SystemSetting", "SetUserSettingLevel", 2);
+        void* getLvl = Il2CppGetMethodOffset(image, "GameEngine", "SystemSetting", "get_ActiveSettingLevel", 0);
+        if (getInst && setLvl && getLvl) {
+            gLowGfxSysInst = (LowGfxSysInstFn)getInst;
+            gLowGfxSetSysLevel = (LowGfxSetSysLevelFn)setLvl;
+            gLowGfxGetSysLevel = (LowGfxGetSysLevelFn)getLvl;
+            return true;
+        }
+    }
+    return false;
+}
 
 struct LowGfxFns {
     bool ready;
@@ -1194,6 +1221,8 @@ struct LowGfxFns {
     void (*setLights)(int);
     int (*getAniso)();
     void (*setAniso)(int);
+    int (*getQual)();
+    void (*setQual)(int, bool);
     bool (*getSky)();
     void (*setSky)(bool);
     bool (*getBloomBr)();
@@ -1219,14 +1248,16 @@ static bool LowGfxBind() {
     if (!base) return false;
     gLowGfxFns.getTex = (int (*)())(base + 0x53295B4);
     gLowGfxFns.setTex = (void (*)(int))(base + 0x53295C4);
-    gLowGfxFns.getShadows = (int (*)())(base + 0x532937C);
-    gLowGfxFns.setShadows = (void (*)(int))(base + 0x5329398);
+    gLowGfxFns.getShadows = (int (*)())(base + 0x532936C);
+    gLowGfxFns.setShadows = (void (*)(int))(base + 0x532937C);
     gLowGfxFns.getShadowDist = (float (*)())(base + 0x5329420);
     gLowGfxFns.setShadowDist = (void (*)(float))(base + 0x5329430);
     gLowGfxFns.getLights = (int (*)())(base + 0x5329314);
     gLowGfxFns.setLights = (void (*)(int))(base + 0x5329324);
     gLowGfxFns.getAniso = (int (*)())(base + 0x53295E0);
     gLowGfxFns.setAniso = (void (*)(int))(base + 0x53295F0);
+    gLowGfxFns.getQual = (int (*)())(base + 0x532929C);
+    gLowGfxFns.setQual = (void (*)(int, bool))(base + 0x53292AC);
     gLowGfxFns.getSky = (bool (*)())(base + 0x52ED91C);
     gLowGfxFns.setSky = (void (*)(bool))(base + 0x52ED92C);
     gLowGfxFns.getBloomBr = (bool (*)())(base + 0xAFBD104);
@@ -1250,6 +1281,11 @@ static bool LowGfxBind() {
 static void LowGfxRestore() {
     if (!gLowGfx.have || !gLowGfxFns.ready) return;
     gLowGfxFns.setTex(gLowGfx.tex);
+    if (gLowGfxFns.setQual) gLowGfxFns.setQual(gLowGfx.unityQual, true);
+    if (gLowGfx.sysLevel > 0 && gLowGfxSysInst && gLowGfxSetSysLevel) {
+        void* sys = gLowGfxSysInst();
+        if (sys) gLowGfxSetSysLevel(sys, gLowGfx.sysLevel, false);
+    }
     gLowGfxFns.setShadows(gLowGfx.shadows);
     gLowGfxFns.setShadowDist(gLowGfx.shadowDist);
     gLowGfxFns.setLights(gLowGfx.lights);
@@ -1280,6 +1316,12 @@ static void ApplyLowGfx() {
         gLowGfx.shadowDist = gLowGfxFns.getShadowDist();
         gLowGfx.lights = gLowGfxFns.getLights();
         gLowGfx.aniso = gLowGfxFns.getAniso();
+        gLowGfx.unityQual = gLowGfxFns.getQual ? gLowGfxFns.getQual() : 0;
+        gLowGfx.sysLevel = 0;
+        if (LowGfxResolveSystemSetting() && gLowGfxSysInst && gLowGfxGetSysLevel) {
+            void* sys = gLowGfxSysInst();
+            if (sys) gLowGfx.sysLevel = gLowGfxGetSysLevel(sys);
+        }
         gLowGfx.sky = gLowGfxFns.getSky();
         gLowGfx.bloomBr = gLowGfxFns.getBloomBr();
         gLowGfx.bloomMp = gLowGfxFns.getBloomMp();
@@ -1290,10 +1332,21 @@ static void ApplyLowGfx() {
         gLowGfx.waterPve = gLowGfxFns.getWaterPve();
         gLowGfx.have = true;
     }
-    int tex = gLowGfx.tex + (int)((2 - gLowGfx.tex) * t + 0.5f);
+    int tex = (int)(t * 2.f + 0.5f);
     if (tex < 0) tex = 0;
     if (tex > 2) tex = 2;
     gLowGfxFns.setTex(tex);
+    if (gLowGfxFns.setQual) {
+        if (t >= 0.25f) gLowGfxFns.setQual(0, true);
+        else gLowGfxFns.setQual(gLowGfx.unityQual, false);
+    }
+    if (LowGfxResolveSystemSetting() && t >= 0.34f) {
+        void* sys = gLowGfxSysInst();
+        if (sys && gLowGfxSetSysLevel) {
+            int lvl = t >= 0.67f ? 1 : 2; // UserSettingLevel VeryLow / Low in 1.6.59 dump
+            gLowGfxSetSysLevel(sys, lvl, false);
+        }
+    }
     gLowGfxFns.setAniso(t >= 0.34f ? 0 : gLowGfx.aniso);
     bool flat = t >= 0.34f;
     gLowGfxFns.setBloomBr(flat ? false : gLowGfx.bloomBr);

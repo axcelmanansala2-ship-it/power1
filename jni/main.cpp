@@ -36,6 +36,7 @@
 #include "ImGui/LOGONIDOS.h"
 #include "Hacks/Hacks.h"
 #include "Hacks/Feature/WeaponCategoryConfig.h"
+#include "ANOGS/Call_IL2Cpp.h"
 
 
 static CustomWidgets g_widgets;
@@ -627,6 +628,7 @@ void Init_Thread(){
     }
     
     INIT_OFFSETS();
+    Il2CppAttach(DOS("libunity.so"));
     hooking();
     
     DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
