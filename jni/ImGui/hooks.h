@@ -1375,7 +1375,15 @@ static void LowGfxRestore() {
 
 static void ApplyLowGfx() {
     if (!LowGfxBind()) return;
+    static int lastTex = -999;
+    static int lastFlat = -1;
+    static int lastBrutal = -1;
+    static int lastAniso = -999;
     if (!checkboxStates["LOWGFX"]) {
+        lastTex = -999;
+        lastFlat = -1;
+        lastBrutal = -1;
+        lastAniso = -999;
         LowGfxRestore();
         return;
     }
@@ -1408,11 +1416,14 @@ static void ApplyLowGfx() {
     }
     int tex = LowGfxTargetTexLimit();
     if (tex < 0) tex = 0;
-    if (gLowGfxFns.setTex) gLowGfxFns.setTex(tex);
-    if (gLowGfxFns.setGpuTex) gLowGfxFns.setGpuTex(tex);
-    if (tex >= 1) {
-        if (gLowGfxFns.setDiscard) gLowGfxFns.setDiscard(true);
-        if (gLowGfxFns.setStreamOut) gLowGfxFns.setStreamOut(0.f);
+    if (tex != lastTex) {
+        if (gLowGfxFns.setTex) gLowGfxFns.setTex(tex);
+        if (gLowGfxFns.setGpuTex) gLowGfxFns.setGpuTex(tex);
+        if (tex >= 1) {
+            if (gLowGfxFns.setDiscard) gLowGfxFns.setDiscard(true);
+            if (gLowGfxFns.setStreamOut) gLowGfxFns.setStreamOut(0.f);
+        }
+        lastTex = tex;
     }
     static int gLowGfxAppliedQual = -2;
     if (!checkboxStates["LOWGFX"]) gLowGfxAppliedQual = -2;
@@ -1444,19 +1455,29 @@ static void ApplyLowGfx() {
         LowGfxApplyTextureGroups();
         gLowGfxTexGroups = true;
     }
-    gLowGfxFns.setAniso(t >= 0.34f ? 0 : gLowGfx.aniso);
-    bool flat = t >= 0.34f;
-    gLowGfxFns.setBloomBr(flat ? false : gLowGfx.bloomBr);
-    gLowGfxFns.setBloomMp(flat ? false : gLowGfx.bloomMp);
-    gLowGfxFns.setBloomPve(flat ? false : gLowGfx.bloomPve);
-    gLowGfxFns.setGodBr(flat ? false : gLowGfx.godBr);
-    gLowGfxFns.setGodPve(flat ? false : gLowGfx.godPve);
-    gLowGfxFns.setWaterBr(flat ? false : gLowGfx.waterBr);
-    gLowGfxFns.setWaterPve(flat ? false : gLowGfx.waterPve);
-    bool brutal = t >= 0.67f;
-    gLowGfxFns.setShadows(brutal ? 0 : gLowGfx.shadows);
-    gLowGfxFns.setShadowDist(brutal ? 0.f : gLowGfx.shadowDist);
-    gLowGfxFns.setLights(brutal ? 0 : gLowGfx.lights);
+    int aniso = t >= 0.34f ? 0 : gLowGfx.aniso;
+    if (aniso != lastAniso) {
+        gLowGfxFns.setAniso(aniso);
+        lastAniso = aniso;
+    }
+    int flat = t >= 0.34f ? 1 : 0;
+    if (flat != lastFlat) {
+        gLowGfxFns.setBloomBr(flat ? false : gLowGfx.bloomBr);
+        gLowGfxFns.setBloomMp(flat ? false : gLowGfx.bloomMp);
+        gLowGfxFns.setBloomPve(flat ? false : gLowGfx.bloomPve);
+        gLowGfxFns.setGodBr(flat ? false : gLowGfx.godBr);
+        gLowGfxFns.setGodPve(flat ? false : gLowGfx.godPve);
+        gLowGfxFns.setWaterBr(flat ? false : gLowGfx.waterBr);
+        gLowGfxFns.setWaterPve(flat ? false : gLowGfx.waterPve);
+        lastFlat = flat;
+    }
+    int brutal = t >= 0.67f ? 1 : 0;
+    if (brutal != lastBrutal) {
+        gLowGfxFns.setShadows(brutal ? 0 : gLowGfx.shadows);
+        gLowGfxFns.setShadowDist(brutal ? 0.f : gLowGfx.shadowDist);
+        gLowGfxFns.setLights(brutal ? 0 : gLowGfx.lights);
+        lastBrutal = brutal;
+    }
 }
 
 static int (*orig_get_MaxThroughWall)(void* instance);

@@ -148,7 +148,7 @@ if (!g_Initialized) {
     style.ChildRounding = 12.0f;
     style.FrameRounding = 10.0f;
     style.PopupRounding = 12.0f;
-    style.ScrollbarRounding = 6.0f;
+    style.ScrollbarRounding = 8.0f;
     style.GrabRounding = 8.0f;
     style.TabRounding = 10.0f;
     style.WindowPadding = ImVec2(16.0f, 14.0f);
@@ -159,7 +159,10 @@ if (!g_Initialized) {
     style.WindowBorderSize = 1.0f;
     style.ChildBorderSize = 1.0f;
     style.PopupBorderSize = 1.0f;
-    style.ScrollbarSize = 16.0f;
+    style.ScrollbarSize = 22.0f;
+    style.GrabMinSize = 36.0f;
+    style.AntiAliasedLines = false;
+    style.AntiAliasedLinesUseTex = false;
 
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigWindowsMoveFromTitleBarOnly = true;
@@ -202,7 +205,7 @@ io.Fonts->Build();
 
 
 ImGuiIO* io = &ImGui::GetIO();
-ImGui_GetTouch(io, get_height());
+ImGui_GetTouch(io, glHeight);
 ImGui_ImplOpenGL3_NewFrame();
 ImGui_ImplAndroid_NewFrame(glWidth, glHeight);
 ImGui::NewFrame();
@@ -591,6 +594,19 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
         ImGui::Columns(1);
     }
     
+    {
+        ImGuiIO& tio = ImGui::GetIO();
+        static float scrollVel = 0.f;
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseDragging(0, 3.0f) && !ImGui::IsAnyItemActive()) {
+            scrollVel = -tio.MouseDelta.y * 1.2f;
+            ImGui::SetScrollY(ImGui::GetScrollY() + scrollVel);
+        } else if (!tio.MouseDown[0] && fabsf(scrollVel) >= 0.5f) {
+            ImGui::SetScrollY(ImGui::GetScrollY() + scrollVel);
+            scrollVel *= 0.86f;
+        } else if (!tio.MouseDown[0]) {
+            scrollVel = 0.f;
+        }
+    }
     ImGui::EndChild();
 }
 ImGui::PopFont();

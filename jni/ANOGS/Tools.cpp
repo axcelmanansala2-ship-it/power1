@@ -5,6 +5,8 @@
 #include <jni.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <time.h>
+#include <vector>
 
 #include "Tools.h"
 #include "Includes/DOSOBF.h"
@@ -87,11 +89,48 @@ bool Tools::PVM_WriteAddr(void *addr, void *buffer, size_t length) {
 }
 
 bool Tools::IsPtrValid(void *addr) {
-    static int fd = -1;
-    if (fd == -1) {
-        fd = open(DOS("/dev/random"), O_WRONLY);
+    uintptr_t p = (uintptr_t)addr;
+    if (p < 0x10000) return false;
+
+    struct Range { uintptr_t a, b; };
+    static std::vector<Range> ranges;
+    static long long stamp = -10000;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    long long now = (long long)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+    if (ranges.empty() || now - stamp > 250) {
+        FILE* f = fopen(DOS("/proc/self/maps"), DOS("r"));
+        if (!f) {
+            static int fd = -1;
+            if (fd == -1) fd = open(DOS("/dev/random"), O_WRONLY);
+            return write(fd, addr, 4) >= 0;
+        }
+        std::vector<Range> next;
+        next.reserve(ranges.empty() ? 256 : ranges.size());
+        char line[320];
+        while (fgets(line, sizeof line, f)) {
+            uintptr_t s = 0, e = 0;
+            char perms[5] = {};
+            if (sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %4s", &s, &e, perms) == 3 && perms[0] == 'r' && e > s)
+                next.push_back({s, e});
+        }
+        fclose(f);
+        if (!next.empty()) {
+            ranges.swap(next);
+            stamp = now;
+        }
     }
-    return write(fd, addr, 4) >= 0;
+    if (ranges.empty()) return false;
+
+    size_t lo = 0, hi = ranges.size();
+    while (lo < hi) {
+        size_t mid = (lo + hi) >> 1;
+        if (ranges[mid].b <= p) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo >= ranges.size()) return false;
+    return p >= ranges[lo].a && (p + 4) <= ranges[lo].b;
 }
 
 uintptr_t Tools::GetBaseAddress(const char *name) {
