@@ -23,6 +23,7 @@
 #include "ImGui/imgui_impl_opengl3.h"
 #include "ImGui/android_native_app_glue.h"
 #include "tools/enc/LicenseTools.h"
+#include "tools/MenuKey.h"
 #include "Includes/DOSOBF.h"
 #include "ImGui/hooks.h"
 #include "ImGui/CLASS.h"
@@ -374,6 +375,8 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
         
         ImGui::NextColumn();
         ImGui::BeginChild("right_content", ImVec2(0, 0), true);
+        MenuKeyStatusLine();
+        ImGui::Separator();
         
         if (tab == 1) {
             if (checkboxStates["ESP ENABLE"]) {
@@ -524,6 +527,8 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             
             ImGui::BeginChild("##SettingsContent", ImVec2(0, 0), true);
             {
+                DrawMenuKeyBox();
+                ImGui::Spacing();
                 ImGui::BeginGroupPanel("Performance", ImVec2(-1, 0));
                 ImGui::Columns(2, nullptr, false);
                 g_widgets.checkbox("120 FPS", &checkboxStates["FRAME120"]);
