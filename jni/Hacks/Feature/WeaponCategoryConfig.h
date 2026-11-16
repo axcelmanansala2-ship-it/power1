@@ -208,7 +208,6 @@ inline void WCSlider(const char* label, float* v, float v_min, float v_max) {
         *v = v_min + (v_max - v_min) * t;
     }
 
-    float track_h = height * 0.45f;
     float t = (*v - v_min) / (v_max - v_min);
     float grab = pos.x + width * t;
 

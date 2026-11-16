@@ -171,8 +171,8 @@ if (!g_Initialized) {
     InitTexture();
 ImFontConfig font_cfg;
 font_cfg.FontDataOwnedByAtlas = false;
-font_cfg.PixelSnapH = true;
-font_cfg.OversampleH = 1;
+font_cfg.PixelSnapH = false;
+font_cfg.OversampleH = 2;
 font_cfg.OversampleV = 1;
 font_cfg.SizePixels = 20.0f;
 LOGIN = io.Fonts->AddFontFromMemoryTTF((void*)minecraft_font_data, (int)minecraft_font_size, 20.0f, &font_cfg);

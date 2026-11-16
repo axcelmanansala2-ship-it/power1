@@ -109,8 +109,7 @@ static inline void DrawSkeleton(ImDrawList* draw, Pawn* pawn, Camera* cam, float
         float x1 = screen[a].x, y1 = scrH - screen[a].y;
         float x2 = screen[b].x, y2 = scrH - screen[b].y;
         if (x1 < -pad || x2 < -pad || y1 < -pad || y2 < -pad) continue;
-        draw->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), IM_COL32(0, 0, 0, 180), 3.2f);
-        draw->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), color, 1.45f);
+        draw->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), color, 1.35f);
     }
 }
 

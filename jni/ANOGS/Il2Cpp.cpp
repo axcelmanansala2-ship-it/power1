@@ -83,9 +83,35 @@ UTF32 surrogate_to_utf32(UTF16 high, UTF16 low) {
 }
 
 const char* utf16_to_utf8(const UTF16* source, size_t len) {
-    std::u16string s(source, source + len);
-    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> convert;
-    return convert.to_bytes(s).c_str();
+    static std::string out;
+    out.clear();
+    if (!source || len == 0 || len > 96) return out.c_str();
+    out.reserve(len * 3);
+    for (size_t i = 0; i < len; ++i) {
+        uint32_t cp = source[i];
+        if (is_high_surrogate((UTF16)cp) && i + 1 < len && is_low_surrogate(source[i + 1])) {
+            cp = surrogate_to_utf32(source[i], source[i + 1]);
+            ++i;
+        } else if (is_surrogate((UTF16)cp)) {
+            cp = '?';
+        }
+        if (cp < 0x80) {
+            out.push_back((char)cp);
+        } else if (cp < 0x800) {
+            out.push_back((char)(0xC0 | (cp >> 6)));
+            out.push_back((char)(0x80 | (cp & 0x3F)));
+        } else if (cp < 0x10000) {
+            out.push_back((char)(0xE0 | (cp >> 12)));
+            out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back((char)(0x80 | (cp & 0x3F)));
+        } else {
+            out.push_back((char)(0xF0 | (cp >> 18)));
+            out.push_back((char)(0x80 | ((cp >> 12) & 0x3F)));
+            out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+            out.push_back((char)(0x80 | (cp & 0x3F)));
+        }
+    }
+    return out.c_str();
 }
 
 const wchar_t* utf16_to_utf32(const UTF16* source, size_t len) {
