@@ -117,8 +117,8 @@ if (!g_Initialized) {
     colors[ImGuiCol_FrameBgActive] = ImVec4(0.25f, 0.78f, 0.92f, 0.35f);
     colors[ImGuiCol_TitleBg] = ImVec4(0.07f, 0.08f, 0.10f, 1.0f);
     colors[ImGuiCol_TitleBgActive] = ImVec4(0.07f, 0.08f, 0.10f, 1.0f);
-    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.f, 0.f, 0.f, 0.15f);
-    colors[ImGuiCol_ScrollbarGrab] = ImVec4(1.f, 1.f, 1.f, 0.18f);
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(1.f, 1.f, 1.f, 0.06f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.55f, 0.62f, 0.68f, 0.55f);
     colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.35f, 0.82f, 0.95f, 0.55f);
     colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.35f, 0.82f, 0.95f, 0.85f);
     colors[ImGuiCol_Header] = ImVec4(0.25f, 0.78f, 0.92f, 0.18f);
@@ -148,7 +148,7 @@ if (!g_Initialized) {
     style.ChildRounding = 12.0f;
     style.FrameRounding = 10.0f;
     style.PopupRounding = 12.0f;
-    style.ScrollbarRounding = 8.0f;
+    style.ScrollbarRounding = 6.0f;
     style.GrabRounding = 8.0f;
     style.TabRounding = 10.0f;
     style.WindowPadding = ImVec2(16.0f, 14.0f);
@@ -159,7 +159,7 @@ if (!g_Initialized) {
     style.WindowBorderSize = 1.0f;
     style.ChildBorderSize = 1.0f;
     style.PopupBorderSize = 1.0f;
-    style.ScrollbarSize = 8.0f;
+    style.ScrollbarSize = 16.0f;
 
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigWindowsMoveFromTitleBarOnly = true;

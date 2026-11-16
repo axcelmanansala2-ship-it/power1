@@ -10,6 +10,7 @@ std::unordered_map<std::string, int> dropdownStates;
 std::atomic<bool> gMatchLive{false};
 
 void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text);
+static void DrawTag(ImDrawList* draw, ImVec2 pos, const char* text, ImU32 textCol, ImU32 edge);
 
 static std::string ReadGameString(String* text) {
     if (!Tools::IsPtrValid(text) || text->length <= 0 || text->length > 48) return {};
@@ -55,12 +56,15 @@ static void DrawWeaponMark(ImDrawList* draw, Camera* camera, const Vector3& myPo
     float x = screen.x;
     float y = glHeight - screen.y;
     float startY = dropdownStates["#LINE_POS"] == 0 ? (float)glHeight - 3.0f : 20.0f;
-    draw->AddLine(ImVec2(glWidth * 0.5f, startY), ImVec2(x, y), IM_COL32(230, 180, 70, 200), 1.2f);
-    draw->AddCircleFilled(ImVec2(x, y), 4.0f, IM_COL32(230, 180, 70, 230), 8);
+    ImVec2 from(glWidth * 0.5f, startY);
+    ImVec2 to(x, y);
+    draw->AddLine(from, to, IM_COL32(0, 0, 0, 140), 2.4f);
+    draw->AddLine(from, to, IM_COL32(232, 186, 78, 210), 1.15f);
+    draw->AddCircleFilled(to, 3.2f, IM_COL32(232, 186, 78, 240), 10);
     char line[80];
-    snprintf(line, sizeof(line), "%s %dm", WeaponItemName(weaponConf, *(int*)(entity + 0x5C)).c_str(), (int)distance);
+    snprintf(line, sizeof(line), "%s  %dm", WeaponItemName(weaponConf, *(int*)(entity + 0x5C)).c_str(), (int)distance);
     ImVec2 textSize = ImGui::CalcTextSize(line);
-    AddTextWithShadow(draw, nullptr, 14.0f, ImVec2(x - textSize.x * 0.5f, y - 18.0f), IM_COL32(255, 220, 140, 240), line);
+    DrawTag(draw, ImVec2(x - textSize.x * 0.5f, y - 22.0f), line, IM_COL32(255, 226, 160, 245), IM_COL32(232, 186, 78, 160));
     drawn++;
 }
 
@@ -92,8 +96,43 @@ static void DrawDroppedWeapons(ImDrawList* draw, Camera* camera, const Vector3& 
 }
 
 void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text) {
-    draw->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 200), text);
+    draw->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 220), text);
     draw->AddText(font, fontSize, pos, textColor, text);
+}
+
+static ImU32 EspPawnColor(Pawn* pawn) {
+    if (pawn && pawn->IsKnocked()) return IM_COL32(255, 156, 64, 235);
+    if (pawn && pawn->m_IsBot()) return IM_COL32(168, 214, 224, 225);
+    return IM_COL32(86, 214, 242, 240);
+}
+
+static void DrawCornerBox(ImDrawList* draw, ImVec2 a, ImVec2 b, ImU32 col) {
+    float w = b.x - a.x;
+    float h = b.y - a.y;
+    float len = w * 0.28f;
+    if (len > h * 0.22f) len = h * 0.22f;
+    if (len < 5.f) len = 5.f;
+    auto arm = [&](ImVec2 o, float sx, float sy) {
+        ImVec2 hx(o.x + len * sx, o.y);
+        ImVec2 hy(o.x, o.y + len * sy);
+        draw->AddLine(o, hx, IM_COL32(0, 0, 0, 200), 3.0f);
+        draw->AddLine(o, hy, IM_COL32(0, 0, 0, 200), 3.0f);
+        draw->AddLine(o, hx, col, 1.6f);
+        draw->AddLine(o, hy, col, 1.6f);
+    };
+    arm(a, 1.f, 1.f);
+    arm(ImVec2(b.x, a.y), -1.f, 1.f);
+    arm(ImVec2(a.x, b.y), 1.f, -1.f);
+    arm(b, -1.f, -1.f);
+}
+
+static void DrawTag(ImDrawList* draw, ImVec2 pos, const char* text, ImU32 textCol, ImU32 edge) {
+    ImVec2 size = ImGui::CalcTextSize(text);
+    ImVec2 min(pos.x - 7.f, pos.y - 3.f);
+    ImVec2 max(pos.x + size.x + 7.f, pos.y + size.y + 3.f);
+    draw->AddRectFilled(min, max, IM_COL32(8, 10, 14, 185), 4.f);
+    draw->AddRect(min, max, edge, 4.f, 0, 1.f);
+    AddTextWithShadow(draw, nullptr, 0.f, pos, textCol, text);
 }
 
 
@@ -334,24 +373,24 @@ void Draw3dBox(ImDrawList* draw, uintptr_t player_ptr, Vector3 rootPos, int glHe
         sc[i].y = glHeight - sc[i].y;
     }
 
-    ImVec4 col = colorStates["DEFAULT"];
-    ImU32 color = IM_COL32(col.x * 255, col.y * 255, col.z * 255, col.w * 255);
-    float t = 1.0f;
+    ImU32 color = EspPawnColor(pawn);
+    auto edge = [&](int a, int b) {
+        draw->AddLine({sc[a].x, sc[a].y}, {sc[b].x, sc[b].y}, IM_COL32(0, 0, 0, 170), 2.4f);
+        draw->AddLine({sc[a].x, sc[a].y}, {sc[b].x, sc[b].y}, color, 1.2f);
+    };
 
-    draw->AddLine({sc[0].x, sc[0].y}, {sc[1].x, sc[1].y}, color, t);
-    draw->AddLine({sc[1].x, sc[1].y}, {sc[2].x, sc[2].y}, color, t);
-    draw->AddLine({sc[2].x, sc[2].y}, {sc[3].x, sc[3].y}, color, t);
-    draw->AddLine({sc[3].x, sc[3].y}, {sc[0].x, sc[0].y}, color, t);
-
-    draw->AddLine({sc[4].x, sc[4].y}, {sc[5].x, sc[5].y}, color, t);
-    draw->AddLine({sc[5].x, sc[5].y}, {sc[6].x, sc[6].y}, color, t);
-    draw->AddLine({sc[6].x, sc[6].y}, {sc[7].x, sc[7].y}, color, t);
-    draw->AddLine({sc[7].x, sc[7].y}, {sc[4].x, sc[4].y}, color, t);
-
-    draw->AddLine({sc[0].x, sc[0].y}, {sc[4].x, sc[4].y}, color, t);
-    draw->AddLine({sc[1].x, sc[1].y}, {sc[5].x, sc[5].y}, color, t);
-    draw->AddLine({sc[2].x, sc[2].y}, {sc[6].x, sc[6].y}, color, t);
-    draw->AddLine({sc[3].x, sc[3].y}, {sc[7].x, sc[7].y}, color, t);
+    edge(0, 1);
+    edge(1, 2);
+    edge(2, 3);
+    edge(3, 0);
+    edge(4, 5);
+    edge(5, 6);
+    edge(6, 7);
+    edge(7, 4);
+    edge(0, 4);
+    edge(1, 5);
+    edge(2, 6);
+    edge(3, 7);
 }
 
 void drawESP__Player(ImDrawList *draw) {
@@ -361,9 +400,11 @@ void drawESP__Player(ImDrawList *draw) {
     Camera* mainCamera = Camera::get_main();
     if (!mainCamera) return;
 
-    if (dropdownStates["#DIST"] == EAim::Crosshair && !checkboxStates["HAND::CAM"]) {
+        if (dropdownStates["#DIST"] == EAim::Crosshair && !checkboxStates["HAND::CAM"]) {
         float fovRadius = seekbarValues["FOV500"] * 1.0f;
-        draw->AddCircle(ImVec2(glWidth / 2, glHeight / 2), fovRadius, ImColor(255, 255, 255, 140), 32, 1.5f);
+        ImVec2 mid(glWidth * 0.5f, glHeight * 0.5f);
+        draw->AddCircle(mid, fovRadius, IM_COL32(0, 0, 0, 120), 64, 2.4f);
+        draw->AddCircle(mid, fovRadius, IM_COL32(86, 214, 242, 150), 64, 1.2f);
     }
 
     BaseGame *get_MatchGame = GamePlay::get_MatchGame();
@@ -444,17 +485,17 @@ void drawESP__Player(ImDrawList *draw) {
         }
 
         if (checkboxStates["ESP LINE"] && pawn->m_IsAlive()) {
-            ImU32 lineColor = IM_COL32(180, 180, 180, 200);
-            
+            ImU32 lineColor = EspPawnColor(pawn);
+            ImVec2 from, to;
             if (dropdownStates["#LINE_POS"] == 0) {
-                Vector3 startPos(glWidth / 2, glHeight - 3);
-                Vector3 endPos(rootPos_WS.x, glHeight - (rootPos_WS.y - 5.0f), 0.0f);
-                drawLine(lineColor, 1.0f, startPos, endPos);
+                from = ImVec2(glWidth * 0.5f, glHeight - 3.f);
+                to = ImVec2(rootPos_WS.x, glHeight - (rootPos_WS.y - 5.0f));
             } else {
-                Vector3 startPos(glWidth / 2, 20);
-                Vector3 endPos(headPos_WS.x, glHeight - headPos_WS.y - 20.0f, 0.0f);
-                drawLine(lineColor, 1.0f, startPos, endPos);
+                from = ImVec2(glWidth * 0.5f, 20.f);
+                to = ImVec2(headPos_WS.x, glHeight - headPos_WS.y - 20.0f);
             }
+            draw->AddLine(from, to, IM_COL32(0, 0, 0, 150), 2.6f);
+            draw->AddLine(from, to, lineColor, 1.15f);
         }
 
         if (checkboxStates["SKELETON"]) {
@@ -470,9 +511,7 @@ void drawESP__Player(ImDrawList *draw) {
             ImVec2 vEnd = { vStart.x + boxWidth, vStart.y + boxHeight };
             if (vEnd.x < 0 || vStart.x > glWidth || vEnd.y < 0 || vStart.y > glHeight) continue;
 
-            ImU32 color = IM_COL32(190, 190, 190, 220);
-            draw->AddRect(ImVec2(vStart.x - 1, vStart.y - 1), ImVec2(vEnd.x + 1, vEnd.y + 1), IM_COL32(20, 20, 20, 120), 0.0f, 0, 1.0f);
-            draw->AddRect(vStart, vEnd, color, 0.0f, 0, 1.2f);
+            DrawCornerBox(draw, vStart, vEnd, EspPawnColor(pawn));
         }
 
         if (checkboxStates["ESP NAME"] && pawn->m_IsAlive()) {
@@ -482,19 +521,17 @@ void drawESP__Player(ImDrawList *draw) {
             snprintf(nameBuf, sizeof(nameBuf), "%s%s", pawn->m_IsBot() ? "[BOT] " : "", playerName);
             const char* strNameC = nameBuf;
             
-            float boxHeight = abs(headPos_WS.y - rootPos_WS.y) * 1.1f;
-            float boxWidth = boxHeight * 0.65f;
-            ImVec2 vStart = { headPos_WS.x - (boxWidth / 2), glHeight - headPos_WS.y - (boxHeight * 0.1f) };
             ImVec2 textSize = ImGui::CalcTextSize(strNameC);
-            ImVec2 textPos(headPos_WS.x - textSize.x * 0.5f, (glHeight - headPos_WS.y) - textSize.y - 3.0f);
-            AddTextWithShadow(draw, nullptr, 13.0f, textPos, IM_COL32(210, 210, 210, 230), strNameC);
+            ImVec2 textPos(headPos_WS.x - textSize.x * 0.5f, (glHeight - headPos_WS.y) - textSize.y - 8.0f);
+            DrawTag(draw, textPos, strNameC, IM_COL32(236, 242, 246, 245), EspPawnColor(pawn));
         }
 
         if (checkboxStates["ESP PLAYER ID"] && pawn->m_IsAlive()) {
             char idBuf[24];
             snprintf(idBuf, sizeof(idBuf), "ID %d", (int)pawn->get_TeamSeatId());
-            ImVec2 textPos(headPos_WS.x - 64.0f, glHeight - headPos_WS.y - 24.0f);
-            AddTextWithShadow(draw, nullptr, 15.0f, textPos, IM_COL32(255, 255, 255, 255), idBuf);
+            ImVec2 idSize = ImGui::CalcTextSize(idBuf);
+            ImVec2 textPos(headPos_WS.x - idSize.x * 0.5f, glHeight - headPos_WS.y - idSize.y - 30.0f);
+            DrawTag(draw, textPos, idBuf, IM_COL32(210, 230, 236, 235), IM_COL32(86, 214, 242, 120));
         }
 
         if (checkboxStates["ESP HEALTH"] && pawn->m_IsAlive()) {
@@ -517,14 +554,14 @@ void drawESP__Player(ImDrawList *draw) {
                             ImVec2 vStart = { headPos_WS.x - (boxWidth / 2), glHeight - headPos_WS.y - (boxHeight * 0.1f) };
                             ImVec2 vEnd = { vStart.x + boxWidth, vStart.y + boxHeight };
                             if (!(vEnd.x < 0 || vStart.x > glWidth || vEnd.y < 0 || vStart.y > glHeight)) {
-                                float barWidth = 4.0f;
-                                float barX = vStart.x - (barWidth * 2) - 4.0f;
+                                float barWidth = 5.0f;
+                                float barX = vStart.x - barWidth - 5.0f;
                                 ImVec2 barTop = { barX, vStart.y };
                                 ImVec2 barBottom = { barX + barWidth, vStart.y + boxHeight };
                                 float fillY = std::clamp(vStart.y + boxHeight * (1.0f - percent), barTop.y, barBottom.y);
-                                draw->AddRectFilled(barTop, barBottom, IM_COL32(40, 40, 40, 200));
-                                draw->AddRectFilled({ barX, fillY }, barBottom, IM_COL32(0, 191, 255, 255));
-                                draw->AddRect(barTop, barBottom, IM_COL32(0, 0, 0, 255));
+                                draw->AddRectFilled(ImVec2(barTop.x - 1.f, barTop.y - 1.f), ImVec2(barBottom.x + 1.f, barBottom.y + 1.f), IM_COL32(0, 0, 0, 180), 2.f);
+                                draw->AddRectFilled(barTop, barBottom, IM_COL32(18, 22, 28, 200), 2.f);
+                                draw->AddRectFilled({ barX, fillY }, barBottom, IM_COL32(70, 196, 230, 255), 2.f);
                             }
                         }
                     }
@@ -543,24 +580,25 @@ void drawESP__Player(ImDrawList *draw) {
             
             if (vEnd.x < 0 || vStart.x > glWidth || vEnd.y < 0 || vStart.y > glHeight) continue;
             
-            float barW = 3.0f;
-            float barX = vStart.x - 6.0f;
+            float barW = 5.0f;
+            float barX = vStart.x - barW - 5.0f;
             ImVec2 barTop = { barX, vStart.y };
             ImVec2 barBottom = { barX + barW, vEnd.y };
             float fillY = vStart.y + boxHeight * (1.0f - percent);
-            ImU32 color = percent > 0.55f ? IM_COL32(220, 220, 220, 230) :
-                          percent > 0.25f ? IM_COL32(160, 160, 160, 230) :
-                          IM_COL32(110, 110, 110, 230);
-            draw->AddRectFilled(barTop, barBottom, IM_COL32(0, 0, 0, 120));
-            draw->AddRectFilled(ImVec2(barX, fillY), barBottom, color);
+            ImU32 color = percent > 0.55f ? IM_COL32(72, 214, 120, 245) :
+                          percent > 0.25f ? IM_COL32(232, 196, 72, 245) :
+                          IM_COL32(232, 78, 78, 245);
+            draw->AddRectFilled(ImVec2(barTop.x - 1.f, barTop.y - 1.f), ImVec2(barBottom.x + 1.f, barBottom.y + 1.f), IM_COL32(0, 0, 0, 180), 2.f);
+            draw->AddRectFilled(barTop, barBottom, IM_COL32(18, 22, 28, 210), 2.f);
+            draw->AddRectFilled(ImVec2(barX, fillY), barBottom, color, 2.f);
         }
 
         if (checkboxStates["ESP DISTANCE"] && pawn->m_IsAlive()) {
             char distBuf[16];
             snprintf(distBuf, sizeof(distBuf), "%dm", (int)distanceToMe);
             ImVec2 textSize = ImGui::CalcTextSize(distBuf);
-            ImVec2 textPos(headPos_WS.x - textSize.x * 0.5f, (glHeight - rootPos_WS.y) + 2.0f);
-            AddTextWithShadow(draw, nullptr, 12.0f, textPos, IM_COL32(170, 170, 170, 220), distBuf);
+            ImVec2 textPos(headPos_WS.x - textSize.x * 0.5f, (glHeight - rootPos_WS.y) + 4.0f);
+            DrawTag(draw, textPos, distBuf, IM_COL32(210, 230, 236, 235), IM_COL32(86, 214, 242, 110));
         }
     }
 
@@ -593,12 +631,12 @@ void drawESP__Player(ImDrawList *draw) {
     }
 
     if (!checkboxStates["HAND::CAM"] && checkboxStates["ENEMY::COUNTER"]) {
-        char label[32];
-        snprintf(label, sizeof(label), "%d  |  %d", totalEnemies, totalBots);
+        char label[48];
+        snprintf(label, sizeof(label), "ENEMY  %d    BOT  %d", totalEnemies, totalBots);
         ImVec2 textSize = ImGui::CalcTextSize(label);
-        float textPosX = (glWidth - textSize.x) * 0.5f;
+        ImVec2 textPos((glWidth - textSize.x) * 0.5f, 16.0f);
         ImDrawList* overlay = ImGui::GetForegroundDrawList();
-        AddTextWithShadow(overlay, nullptr, 15.0f, ImVec2(textPosX, 18.0f), IM_COL32(200, 200, 200, 230), label);
+        DrawTag(overlay, textPos, label, IM_COL32(236, 244, 248, 245), IM_COL32(86, 214, 242, 170));
     }
 }
 void* Aimbot_Thread() {

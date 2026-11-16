@@ -97,9 +97,9 @@ static inline void DrawSkeleton(ImDrawList* draw, Pawn* pawn, Camera* cam, float
     }
     if (validCount < 3) return;
 
-    ImVec4 col = colorStates["DEFAULT"];
-    ImU32 color = IM_COL32((int)(col.x * 255), (int)(col.y * 255), (int)(col.z * 255), (int)(col.w * 255));
-    const float thickness = 1.5f;
+    ImU32 color = (pawn->IsKnocked()) ? IM_COL32(255, 156, 64, 235) :
+                  (pawn->m_IsBot()) ? IM_COL32(168, 214, 224, 225) :
+                  IM_COL32(86, 214, 242, 240);
     const float pad = 500.f;
 
     for (int i = 0; i < BoneConnectionCount; i++) {
@@ -109,7 +109,8 @@ static inline void DrawSkeleton(ImDrawList* draw, Pawn* pawn, Camera* cam, float
         float x1 = screen[a].x, y1 = scrH - screen[a].y;
         float x2 = screen[b].x, y2 = scrH - screen[b].y;
         if (x1 < -pad || x2 < -pad || y1 < -pad || y2 < -pad) continue;
-        draw->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), color, thickness);
+        draw->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), IM_COL32(0, 0, 0, 180), 3.2f);
+        draw->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), color, 1.45f);
     }
 }
 
