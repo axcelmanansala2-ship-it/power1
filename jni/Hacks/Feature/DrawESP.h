@@ -375,6 +375,7 @@ void drawESP__Player(ImDrawList *draw) {
     if (!Tools::IsPtrValid(get_LocalPawn)) return;
     
     Vector3 pLocalPawn_rootPos = get_LocalPawn->get_LastPawnPos();
+    ApplyWallShot();
     DrawDroppedWeapons(draw, mainCamera, pLocalPawn_rootPos);
            
     List<Pawn *> *EnemyPawns = get_MatchGame->EnemyPawns();

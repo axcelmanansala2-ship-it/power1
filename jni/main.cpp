@@ -500,6 +500,8 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             ImGui::Columns(2, nullptr, false);
             g_widgets.checkbox("Wallhack", &checkboxStates["WALLHACK"]);
             ImGui::NextColumn();
+            g_widgets.checkbox("Wall Shot", &checkboxStates["WALL::SHOT"]);
+            ImGui::NextColumn();
             g_widgets.checkbox("Maphack", &checkboxStates["ADVANCE::UAV"]);
             ImGui::NextColumn();
             g_widgets.checkbox("No Parachute", &checkboxStates["NO::PARACHUTE"]);

@@ -1055,6 +1055,142 @@ static void hook_IllusionTick(void* instance, float dt) {
     g_IllusionForced = true;
 }
 
+static constexpr int kWallShotCount = 8;
+static constexpr float kWallShotDist = 40.f;
+
+struct WallSnap {
+    uintptr_t addr;
+    int walls;
+    int pve;
+    float dist;
+};
+static WallSnap gWallSnap[2];
+
+static bool WallShotIsInstant(void* instance) {
+    if (!Tools::IsPtrValid(instance)) return false;
+    auto* obj = reinterpret_cast<Il2CppObject*>(instance);
+    if (Tools::IsPtrValid(obj->klass)) {
+        const char* name = obj->klass->_1.name;
+        if (name && Tools::IsPtrValid((void*)name) && Tools::IsPtrValid((void*)(name + 24))) {
+            const char* prefix = "WeaponFireComponent_Instant";
+            bool match = true;
+            for (int i = 0; prefix[i]; ++i) {
+                if (name[i] != prefix[i]) { match = false; break; }
+            }
+            if (match) return true;
+        }
+    }
+    uintptr_t addr = (uintptr_t)instance;
+    if (!Tools::IsPtrValid((void*)(addr + 0x3F4))) return false;
+    int marker = *reinterpret_cast<int*>(addr + 0x364);
+    int walls = *reinterpret_cast<int*>(addr + 0x3EC);
+    if (marker < 0x40000000 || marker >= 0x44800000) return false;
+    return walls >= 0 && walls <= kWallShotCount;
+}
+
+static void WallShotRestoreSlot(WallSnap& slot) {
+    if (!slot.addr) return;
+    if (Tools::IsPtrValid((void*)(slot.addr + 0x3F4))) {
+        *reinterpret_cast<int*>(slot.addr + 0x3EC) = slot.walls;
+        *reinterpret_cast<int*>(slot.addr + 0x3F0) = slot.pve;
+        *reinterpret_cast<float*>(slot.addr + 0x3F4) = slot.dist;
+    }
+    slot.addr = 0;
+}
+
+static void WallShotRestoreAll() {
+    WallShotRestoreSlot(gWallSnap[0]);
+    WallShotRestoreSlot(gWallSnap[1]);
+}
+
+static void WallShotKeep(void* fire, bool fromFire) {
+    if (!fromFire && !WallShotIsInstant(fire)) return;
+    uintptr_t addr = (uintptr_t)fire;
+    if (!Tools::IsPtrValid((void*)(addr + 0x3F4))) return;
+    WallSnap* slot = nullptr;
+    for (int i = 0; i < 2; ++i) {
+        if (gWallSnap[i].addr == addr) slot = &gWallSnap[i];
+    }
+    if (!slot) {
+        for (int i = 0; i < 2; ++i) {
+            if (!gWallSnap[i].addr) { slot = &gWallSnap[i]; break; }
+        }
+    }
+    if (!slot) return;
+    if (slot->addr != addr) {
+        int walls = *reinterpret_cast<int*>(addr + 0x3EC);
+        int pve = *reinterpret_cast<int*>(addr + 0x3F0);
+        float dist = *reinterpret_cast<float*>(addr + 0x3F4);
+        if (walls == kWallShotCount && pve == kWallShotCount && dist == kWallShotDist) {
+            walls = 0;
+            pve = 0;
+            dist = 0.f;
+        }
+        slot->addr = addr;
+        slot->walls = walls;
+        slot->pve = pve;
+        slot->dist = dist;
+    }
+    *reinterpret_cast<int*>(addr + 0x3EC) = kWallShotCount;
+    *reinterpret_cast<int*>(addr + 0x3F0) = kWallShotCount;
+    *reinterpret_cast<float*>(addr + 0x3F4) = kWallShotDist;
+}
+
+static void* (*wall_get_Fire)(void*) = nullptr;
+static void* (*wall_get_CurrentFire)(void*) = nullptr;
+
+static void ApplyWallShot() {
+    if (!checkboxStates["WALL::SHOT"]) {
+        WallShotRestoreAll();
+        return;
+    }
+    auto localFn = FastFuncs::Gameplay_get_LocalPawn_Fast;
+    auto weaponFn = FastFuncs::Pawn_get_CurrentWeapon_Fast;
+    if (!localFn || !weaponFn) return;
+    Pawn* pawn = localFn();
+    if (!Tools::IsPtrValid(pawn)) return;
+    void* weapon = weaponFn(pawn);
+    if (!Tools::IsPtrValid(weapon)) return;
+    if (!wall_get_Fire) {
+        uintptr_t base = libunity_base ? libunity_base : (uintptr_t)getAbsoluteAddress(DOS("libunity.so"), 0);
+        if (!base) return;
+        wall_get_Fire = (void* (*)(void*))(base + 0x546E818);
+        wall_get_CurrentFire = (void* (*)(void*))(base + 0x5472E48);
+    }
+    void* primary = wall_get_Fire ? wall_get_Fire(weapon) : nullptr;
+    void* current = wall_get_CurrentFire ? wall_get_CurrentFire(weapon) : nullptr;
+    for (int i = 0; i < 2; ++i) {
+        if (!gWallSnap[i].addr) continue;
+        if (gWallSnap[i].addr == (uintptr_t)primary || gWallSnap[i].addr == (uintptr_t)current) continue;
+        WallShotRestoreSlot(gWallSnap[i]);
+    }
+    if (primary) WallShotKeep(primary, false);
+    if (current && current != primary) WallShotKeep(current, false);
+}
+
+static int (*orig_get_MaxThroughWall)(void* instance);
+static int hook_get_MaxThroughWall(void* instance) {
+    if (!orig_get_MaxThroughWall) return 0;
+    if (instance && checkboxStates["WALL::SHOT"]) {
+        uintptr_t addr = (uintptr_t)instance;
+        for (int i = 0; i < 2; ++i) {
+            if (gWallSnap[i].addr == addr) {
+                WallShotKeep(instance, true);
+                return kWallShotCount;
+            }
+        }
+        auto localFn = FastFuncs::Gameplay_get_LocalPawn_Fast;
+        void* local = localFn ? (void*)localFn() : nullptr;
+        void* owner = Tools::IsPtrValid((void*)(addr + 0x28))
+            ? *reinterpret_cast<void**>(addr + 0x28) : nullptr;
+        if (local && owner == local) {
+            WallShotKeep(instance, true);
+            return kWallShotCount;
+        }
+    }
+    return orig_get_MaxThroughWall(instance);
+}
+
 static bool (*orig_GetEnableVulkan)(void* instance);
 static bool hook_GetEnableVulkan(void* instance) {
     return false;
@@ -1155,6 +1291,9 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0xC2B5F90")), (void*)hook_get_ChangeCli
 // No Spread
 DOSHOOK((void*)(libunity_base + GET_OFF("0xD53408C")), (void*)hook_GetRealSpreadModifier, (void**)&orig_GetRealSpreadModifier);
 DOSHOOK((void*)(libunity_base + GET_OFF("0xC2BDF40")), (void*)hook_GetShotSpread, (void**)&orig_GetShotSpread);
+
+// Wall shot: local gun keeps traveling after cover
+DOSHOOK((void*)(libunity_base + GET_OFF("0xD529DDC")), (void*)hook_get_MaxThroughWall, (void**)&orig_get_MaxThroughWall);
 
 // No Shake
 DOSHOOK((void*)(libunity_base + GET_OFF("0x669780C")), (void*)&hook_UpdateCameraShake, (void**)&orig_UpdateCameraShake);
