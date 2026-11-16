@@ -31,6 +31,7 @@
 #include "tools/things.h"
 #include "ImGui/widgets.hpp"
 #include "ImGui/Iconcpp.h"
+#include "ImGui/minecraft_font.h"
 #include "ImGui/stb_image.h"
 #include "ImGui/LOGONIDOS.h"
 #include "Hacks/Hacks.h"
@@ -172,12 +173,16 @@ if (!g_Initialized) {
 
     InitTexture();
 ImFontConfig font_cfg;
+font_cfg.FontDataOwnedByAtlas = false;
+font_cfg.PixelSnapH = true;
+font_cfg.OversampleH = 1;
+font_cfg.OversampleV = 1;
 font_cfg.SizePixels = 20.0f;
-LOGIN = io.Fonts->AddFontDefault(&font_cfg);
-font_cfg.SizePixels = 48.0f;
-F48 = io.Fonts->AddFontDefault(&font_cfg);
-font_cfg.SizePixels = 24.0f;
-Crozn = io.Fonts->AddFontDefault(&font_cfg);
+LOGIN = io.Fonts->AddFontFromMemoryTTF((void*)minecraft_font_data, (int)minecraft_font_size, 20.0f, &font_cfg);
+font_cfg.SizePixels = 32.0f;
+F48 = io.Fonts->AddFontFromMemoryTTF((void*)minecraft_font_data, (int)minecraft_font_size, 32.0f, &font_cfg);
+font_cfg.SizePixels = 22.0f;
+Crozn = io.Fonts->AddFontFromMemoryTTF((void*)minecraft_font_data, (int)minecraft_font_size, 22.0f, &font_cfg);
 static const ImWchar icons_ranges[] = { 0xf000, 0xf8ff, 0 };
 ImFontConfig icons_config;
 icons_config.MergeMode = true;
@@ -380,7 +385,6 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             DrawMenuKeyBox();
             ImGui::TextUnformatted("Menu locked");
         } else {
-        MenuKeyStatusLine();
         ImGui::Separator();
         
         if (tab == 1) {
@@ -629,6 +633,7 @@ void native_Init() {
 }
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+    MenuKeyBindVm(vm);
     JNIEnv *env;
     vm->GetEnv((void **) &env, JNI_VERSION_1_6);
     return JNI_VERSION_1_6;
