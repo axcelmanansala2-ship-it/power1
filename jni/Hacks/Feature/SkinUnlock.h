@@ -144,6 +144,82 @@ static bool SkinArrHasU32(void* obj, uintptr_t off, uint32_t want) {
     return false;
 }
 
+struct SkinCharEquip {
+    uint32_t skin = 0;
+    uint64_t model = 0;
+    int n = 0;
+    uint32_t ids[48] = {};
+};
+static SkinCharEquip gCharEquip[2];
+static std::atomic<int> gCharEquipIdx{0};
+static std::atomic<uint32_t> gCharSeenUi{0};
+
+static bool SkinCharListed(const SkinCharEquip& e, uint32_t role) {
+    if (!e.skin || !role || role == e.skin) return false;
+    int n = e.n;
+    if (n < 0 || n > 48) return false;
+    for (int i = 0; i < n; ++i)
+        if (e.ids[i] == role) return true;
+    return false;
+}
+
+static uint64_t (*gSkinModelByRole)(uint32_t) = nullptr;
+static uint64_t SkinModelByRoleHook(uint32_t roleId) {
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (e.model && SkinCharListed(e, roleId)) return e.model;
+    return gSkinModelByRole ? gSkinModelByRole(roleId) : 0;
+}
+
+static uint64_t (*gSkinRoleModelFn)(int, int, int, int) = nullptr;
+static uint64_t SkinRoleModelHook(int roleId, int suitId, int clothId, int isUI) {
+    if (isUI && roleId > 0)
+        gCharSeenUi.store((uint32_t)roleId, std::memory_order_relaxed);
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (e.model && SkinCharListed(e, (uint32_t)roleId)) return e.model;
+    return gSkinRoleModelFn ? gSkinRoleModelFn(roleId, suitId, clothId, isUI) : 0;
+}
+
+static int (*gSkinOutwardFn)(int, int, int) = nullptr;
+static int SkinOutwardHook(int roleId, int suitId, int isUI) {
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (e.skin && SkinCharListed(e, (uint32_t)roleId)) return (int)e.skin;
+    return gSkinOutwardFn ? gSkinOutwardFn(roleId, suitId, isUI) : roleId;
+}
+
+static int (*gSkinRoleForModelFn)(int, int, int, int) = nullptr;
+static int SkinRoleForModelHook(int roleId, int suitId, int clothId, int isUI) {
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (e.skin && SkinCharListed(e, (uint32_t)roleId)) return (int)e.skin;
+    return gSkinRoleForModelFn ? gSkinRoleForModelFn(roleId, suitId, clothId, isUI) : roleId;
+}
+
+static uint32_t (*gSkinOutwardSiFn)(uint32_t, void*, int) = nullptr;
+static uint32_t SkinOutwardSiHook(uint32_t roleId, void* info, int isUI) {
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (e.skin && SkinCharListed(e, roleId)) return e.skin;
+    return gSkinOutwardSiFn ? gSkinOutwardSiFn(roleId, info, isUI) : roleId;
+}
+
+static void SkinInstallCharHooks() {
+    if (!libunity_base) return;
+    if (!gSkinModelByRole)
+        DOSHOOK((void*)(libunity_base + 0xA30A828), (void*)SkinModelByRoleHook, (void**)&gSkinModelByRole);
+    if (!gSkinRoleModelFn)
+        DOSHOOK((void*)(libunity_base + 0x5F41930), (void*)SkinRoleModelHook, (void**)&gSkinRoleModelFn);
+    if (!gSkinOutwardFn)
+        DOSHOOK((void*)(libunity_base + 0x5F41D3C), (void*)SkinOutwardHook, (void**)&gSkinOutwardFn);
+    if (!gSkinRoleForModelFn)
+        DOSHOOK((void*)(libunity_base + 0x5F01BC8), (void*)SkinRoleForModelHook, (void**)&gSkinRoleForModelFn);
+    if (!gSkinOutwardSiFn)
+        DOSHOOK((void*)(libunity_base + 0x5F41BA0), (void*)SkinOutwardSiHook, (void**)&gSkinOutwardSiFn);
+}
+
+static uint32_t SkinFnU32(uintptr_t rva, uint32_t id) {
+    if (!libunity_base || !rva || !id) return 0;
+    auto fn = (uint32_t (*)(uint32_t))(libunity_base + rva);
+    return fn(id);
+}
+
 static int SkinLastInt(void* obj, uintptr_t off) {
     if (!SkinRdOk(obj, off)) return 0;
     auto arr = *(Array<int>**)((uintptr_t)obj + off);
@@ -211,6 +287,7 @@ static void SkinInstallHooks() {
     SkinHookOne(9, kSkinRvaRoleConf, &gSkinRole, (void*)SkinCtorHook<9>);
     SkinHookOne(10, kSkinRvaCharModel, &gSkinModel, (void*)SkinCtorHook<10>);
     SkinHookOne(11, kSkinRvaRoleBase, &gSkinBase, (void*)SkinCtorHook<11>);
+    SkinInstallCharHooks();
 }
 
 static const uintptr_t kCharModelOff[12] = {
@@ -264,6 +341,7 @@ static void SkinPaintRole(uint32_t dstRole, uint64_t skinAvatar, const SkinRow& 
 static void SkinApplyChar(const SkinRow& row) {
     uint32_t skinRole = (uint32_t)row.skinId;
     if (!skinRole) return;
+    SkinInstallCharHooks();
 
     pthread_mutex_lock(&gSkinMu);
     std::vector<void*> roles = gSkinRole;
@@ -278,27 +356,54 @@ static void SkinApplyChar(const SkinRow& row) {
         skinAvatar = SkinRdU64(r, 0x28);
         break;
     }
+    uint64_t skinModel = gSkinModelByRole ? gSkinModelByRole(skinRole) : 0;
+    if (!skinModel) skinModel = skinAvatar;
 
-    uint32_t group = (uint32_t)row.baseId;
-    uint32_t owned = 0;
-    void* hit = nullptr;
+    uint32_t group = SkinFnU32(0xBAE59B4, skinRole);
+    if (!group) group = SkinFnU32(0xBAE655C, skinRole);
+    if (!group) group = (uint32_t)row.baseId;
+
+    SkinCharEquip next;
+    next.skin = skinRole;
+    next.model = skinModel;
+    auto add = [&](uint32_t id) {
+        if (!id || id == skinRole || next.n >= 48) return;
+        for (int i = 0; i < next.n; ++i)
+            if (next.ids[i] == id) return;
+        next.ids[next.n++] = id;
+    };
+    add(SkinFnU32(0xBAE8134, skinRole));
+    add((uint32_t)row.baseId);
+    for (void* role : roles) {
+        uint32_t id = (uint32_t)SkinRdI(role, 0x34);
+        uint32_t base = (uint32_t)SkinRdI(role, 0x10);
+        if (!group) continue;
+        if (id == group || base == group) add(id);
+    }
     for (void* b : bases) {
-        if (SkinArrHasU32(b, 0x28, skinRole)) { hit = b; break; }
-    }
-    if (!hit && group) {
-        for (void* b : bases) {
-            if ((uint32_t)SkinRdI(b, 0x1C) == group) { hit = b; break; }
+        uint32_t id = (uint32_t)SkinRdI(b, 0x1C);
+        if (!SkinArrHasU32(b, 0x28, skinRole) && !(group && id == group)) continue;
+        add((uint32_t)SkinRdI(b, 0x18));
+        SkinWrI(b, 0x18, (int)skinRole);
+        if (SkinRdOk(b, 0x28)) {
+            auto arr = *(Array<int>**)((uintptr_t)b + 0x28);
+            if (Tools::IsPtrValid(arr)) {
+                int n = arr->getLength();
+                if (n > 0 && n <= 64) {
+                    for (int i = 0; i < n; ++i) add((uint32_t)arr->m_Items[i]);
+                }
+            }
         }
+        break;
     }
-    if (hit) {
-        uint32_t cur = (uint32_t)SkinRdI(hit, 0x18);
-        if (cur && cur != skinRole) owned = cur;
-        SkinWrI(hit, 0x18, (int)skinRole);
-    }
-    if (!owned && group && group != skinRole) owned = group;
+    if (next.n == 0) add(gCharSeenUi.load(std::memory_order_relaxed));
 
-    if (owned && owned != skinRole)
-        SkinPaintRole(owned, skinAvatar, row, roles, models, res);
+    int slot = 1 - gCharEquipIdx.load(std::memory_order_relaxed);
+    gCharEquip[slot] = next;
+    gCharEquipIdx.store(slot, std::memory_order_release);
+
+    for (int i = 0; i < next.n; ++i)
+        SkinPaintRole(next.ids[i], skinModel, row, roles, models, res);
 }
 
 static void SkinApplyRow(const SkinRow& row) {
