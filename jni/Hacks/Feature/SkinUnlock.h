@@ -280,15 +280,22 @@ static int SkinFilled(void* skin) {
     return n;
 }
 
-static void SkinCopyOneSkin(void* dst, void* src) {
+static int SkinBodySlot(int suitVal, uintptr_t off, int body3p, int bodyUi) {
+    if (suitVal) return suitVal;
+    if (off == 0x7C || off == 0x34 || off == 0x28) return body3p;
+    if (off == 0x44 || off == 0x70) return bodyUi ? bodyUi : body3p;
+    return 0;
+}
+
+static void SkinCopyOneSkin(void* dst, void* src, int body3p, int bodyUi) {
     if (!dst || !src || dst == src) return;
     SkinWrB(dst, 0x19, SkinRdB(src, 0x19));
     for (uintptr_t off : kRoleSkinCopy)
-        SkinWrI(dst, off, SkinRdI(src, off));
+        SkinWrI(dst, off, SkinBodySlot(SkinRdI(src, off), off, body3p, bodyUi));
 }
 
 static void SkinCopyRoleSkins(uint32_t dstId, uint32_t skinId, void* dstRole, void* srcRole,
-                              const std::vector<void*>& skins) {
+                              const std::vector<void*>& skins, int body3p, int bodyUi) {
     void* srcBest = nullptr;
     int srcBestN = -1;
     void* srcOf[8] = {};
@@ -312,8 +319,38 @@ static void SkinCopyRoleSkins(uint32_t dstId, uint32_t skinId, void* dstRole, vo
         int kind = SkinRdB(d, 0x18);
         void* src = (kind >= 0 && kind < 8) ? srcOf[kind] : nullptr;
         if (!src) src = srcBest;
-        SkinCopyOneSkin(d, src);
+        SkinCopyOneSkin(d, src, body3p, bodyUi);
     }
+}
+
+static uint64_t SkinAvatarOf(uint32_t roleId, const std::vector<void*>& res) {
+    void* r = SkinByRole(res, roleId, 0x1C);
+    return r ? SkinRdU64(r, 0x28) : 0;
+}
+
+static void SkinApplyMesh(void* dstMesh, void* srcMesh) {
+    if (!dstMesh || !srcMesh || dstMesh == srcMesh) return;
+    SkinWrB(dstMesh, 0x10, SkinRdB(srcMesh, 0x10));
+    SkinWrB(dstMesh, 0x11, SkinRdB(srcMesh, 0x11));
+    SkinWrI(dstMesh, 0x14, SkinRdI(srcMesh, 0x14));
+    for (uintptr_t off : kCharCopyOff)
+        SkinWrI(dstMesh, off, SkinRdI(srcMesh, off));
+    if (SkinRdOk(srcMesh, 0x58) && SkinRdOk(srcMesh, 0x5C) &&
+        SkinRdOk(dstMesh, 0x58) && SkinRdOk(dstMesh, 0x5C))
+        *(void**)((uintptr_t)dstMesh + 0x58) = *(void**)((uintptr_t)srcMesh + 0x58);
+    if (SkinRdOk(srcMesh, 0x68) && SkinRdOk(srcMesh, 0x6C) &&
+        SkinRdOk(dstMesh, 0x68) && SkinRdOk(dstMesh, 0x6C))
+        *(void**)((uintptr_t)dstMesh + 0x68) = *(void**)((uintptr_t)srcMesh + 0x68);
+    if (SkinRdOk(srcMesh, 0x70) && SkinRdOk(dstMesh, 0x70) &&
+        SkinRdOk(srcMesh, 0x74) && SkinRdOk(dstMesh, 0x74))
+        *(void**)((uintptr_t)dstMesh + 0x70) = *(void**)((uintptr_t)srcMesh + 0x70);
+    SkinWrU64(dstMesh, 0x80, SkinRdU64(srcMesh, 0x80));
+}
+
+static void SkinApplySnap(void* dstMesh, const int* f) {
+    if (!dstMesh || !f) return;
+    for (int i = 0; i < 12; ++i)
+        SkinWrI(dstMesh, kCharModelOff[i], f[i]);
 }
 
 static void SkinPaintRole(uint32_t dstId, uint64_t skinAvatar, const SkinRow& row,
@@ -350,25 +387,37 @@ static void SkinPaintRole(uint32_t dstId, uint64_t skinAvatar, const SkinRow& ro
     }
 
     void* srcMesh = SkinByAvatar(models, srcAvatar);
-    void* dstMesh = SkinByAvatar(models, dstAvatar);
-    if (srcMesh && dstMesh && srcMesh != dstMesh) {
-        SkinWrB(dstMesh, 0x10, SkinRdB(srcMesh, 0x10));
-        SkinWrB(dstMesh, 0x11, SkinRdB(srcMesh, 0x11));
-        SkinWrI(dstMesh, 0x14, SkinRdI(srcMesh, 0x14));
-        for (uintptr_t off : kCharCopyOff)
-            SkinWrI(dstMesh, off, SkinRdI(srcMesh, off));
-        if (SkinRdOk(srcMesh, 0x58) && SkinRdOk(srcMesh, 0x5C) &&
-            SkinRdOk(dstMesh, 0x58) && SkinRdOk(dstMesh, 0x5C))
-            *(void**)((uintptr_t)dstMesh + 0x58) = *(void**)((uintptr_t)srcMesh + 0x58);
-        if (SkinRdOk(srcMesh, 0x68) && SkinRdOk(srcMesh, 0x6C) &&
-            SkinRdOk(dstMesh, 0x68) && SkinRdOk(dstMesh, 0x6C))
-            *(void**)((uintptr_t)dstMesh + 0x68) = *(void**)((uintptr_t)srcMesh + 0x68);
-        if (SkinRdOk(srcMesh, 0x70) && SkinRdOk(dstMesh, 0x70) &&
-            SkinRdOk(srcMesh, 0x74) && SkinRdOk(dstMesh, 0x74))
-            *(void**)((uintptr_t)dstMesh + 0x70) = *(void**)((uintptr_t)srcMesh + 0x70);
-        SkinWrU64(dstMesh, 0x80, SkinRdU64(srcMesh, 0x80));
+    if (!srcMesh && srcRole) {
+        uint32_t base = (uint32_t)SkinRdI(srcRole, 0x10);
+        if (base && base != skinId)
+            srcMesh = SkinByAvatar(models, SkinAvatarOf(base, res));
     }
-    SkinCopyRoleSkins(dstId, skinId, dstRole, srcRole, roleSkins);
+    int body3p = 0;
+    int bodyUi = 0;
+    if (srcMesh) {
+        body3p = SkinRdI(srcMesh, 0x24);
+        if (!body3p) body3p = SkinRdI(srcMesh, 0x30);
+        bodyUi = SkinRdI(srcMesh, 0x20);
+        if (!bodyUi) bodyUi = body3p;
+    } else if (row.hasModel) {
+        bodyUi = row.modelF[2];
+        body3p = row.modelF[3] ? row.modelF[3] : row.modelF[6];
+        if (!bodyUi) bodyUi = body3p;
+    }
+
+    auto paintBody = [&](uint32_t id, uint64_t avatar) {
+        if (!id) return;
+        void* mesh = SkinByAvatar(models, avatar ? avatar : SkinAvatarOf(id, res));
+        if (!mesh || mesh == srcMesh) return;
+        if (srcMesh) SkinApplyMesh(mesh, srcMesh);
+        else if (row.hasModel) SkinApplySnap(mesh, row.modelF);
+    };
+    paintBody(dstId, dstAvatar);
+    if (dstRole) {
+        uint32_t base = (uint32_t)SkinRdI(dstRole, 0x10);
+        if (base && base != dstId) paintBody(base, 0);
+    }
+    SkinCopyRoleSkins(dstId, skinId, dstRole, srcRole, roleSkins, body3p, bodyUi);
 }
 
 static void SkinApplyChar(uint32_t dstRole, const SkinRow& row) {
