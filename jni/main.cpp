@@ -519,6 +519,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
             SLIDER("Aim Assist", &seekbarValues["AIM::ASSIST"], 0.0f, 100.0f);
             SLIDER("Fov BR", &seekbarValues["FOV"], 0.0f, 200.0f);
+            g_widgets.checkbox("BR scope POV", &checkboxStates["SCOPE::BR"]);
             SLIDER("Fov MP", &seekbarValues["FOV1"], 0.0f, 200.0f);
             SLIDER("Snowb Speed", &seekbarValues["SizeSnow"], 0.0f, 70.0f); 
             SLIDER("Loot Speed", &seekbarValues["FAST::LOOT"], 0.0f, 100.0f);
@@ -625,6 +626,7 @@ ImGui::PopStyleVar(3);
 
 if (g_Initialized) {
     ApplyFpsBoost();
+    ApplyScopeBr();
     ApplyGraphicsLevel();
     ApplyLowGfx();
 }
