@@ -615,7 +615,10 @@ ImGui::PopStyleColor(2);
 ImGui::PopStyleVar(3);
 }
 
-if (g_Initialized) ApplyLowGfx();
+if (g_Initialized) {
+    ApplyFpsBoost();
+    ApplyLowGfx();
+}
 ImGui::Render();
 ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 if (clearMousePos && !io->MouseDown[0]) {
