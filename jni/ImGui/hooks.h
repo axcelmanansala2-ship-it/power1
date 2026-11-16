@@ -1176,6 +1176,8 @@ struct LowGfxSaved {
     float shadowDist;
     int lights;
     int aniso;
+    bool discardMips;
+    float streamOut;
     int unityQual;
     int sysLevel;
     bool sky;
@@ -1228,6 +1230,11 @@ struct LowGfxFns {
     void (*setLights)(int);
     int (*getAniso)();
     void (*setAniso)(int);
+    void (*setGpuTex)(int);
+    bool (*getDiscard)();
+    void (*setDiscard)(bool);
+    float (*getStreamOut)();
+    void (*setStreamOut)(float);
     int (*getQual)();
     void (*setQual)(int, bool);
     bool (*getSky)();
@@ -1269,7 +1276,7 @@ static void LowGfxApplyTextureGroups() {
         if (!base) return;
         apply = (void (*)(void*))(base + 0xAFB2C0C);
     }
-  if (apply) apply(sys);
+    if (apply) apply(sys);
 }
 
 static int (*orig_get_masterTextureLimit)();
@@ -1286,6 +1293,20 @@ static void hook_set_masterTextureLimit(int value) {
     if (orig_set_masterTextureLimit) orig_set_masterTextureLimit(value);
 }
 
+static int (*orig_get_gpuTextureLimit)();
+static int hook_get_gpuTextureLimit() {
+    int forced = LowGfxTargetTexLimit();
+    if (forced >= 0) return forced;
+    return orig_get_gpuTextureLimit ? orig_get_gpuTextureLimit() : 0;
+}
+
+static void (*orig_set_gpuTextureLimit)(int);
+static void hook_set_gpuTextureLimit(int value) {
+    int forced = LowGfxTargetTexLimit();
+    if (forced >= 1) value = forced;
+    if (orig_set_gpuTextureLimit) orig_set_gpuTextureLimit(value);
+}
+
 static bool LowGfxBind() {
     if (gLowGfxFns.ready) return true;
     uintptr_t base = libunity_base ? libunity_base : (uintptr_t)getAbsoluteAddress(DOS("libunity.so"), 0);
@@ -1300,6 +1321,11 @@ static bool LowGfxBind() {
     gLowGfxFns.setLights = (void (*)(int))(base + 0x5329324);
     gLowGfxFns.getAniso = (int (*)())(base + 0x53295E0);
     gLowGfxFns.setAniso = (void (*)(int))(base + 0x53295F0);
+    gLowGfxFns.setGpuTex = (void (*)(int))(base + 0x534BC94);
+    gLowGfxFns.getDiscard = (bool (*)())(base + 0x534C328);
+    gLowGfxFns.setDiscard = (void (*)(bool))(base + 0x534C338);
+    gLowGfxFns.getStreamOut = (float (*)())(base + 0x534C354);
+    gLowGfxFns.setStreamOut = (void (*)(float))(base + 0x534C364);
     gLowGfxFns.getQual = (int (*)())(base + 0x532929C);
     gLowGfxFns.setQual = (void (*)(int, bool))(base + 0x53292AC);
     gLowGfxFns.getSky = (bool (*)())(base + 0x52ED91C);
@@ -1334,6 +1360,8 @@ static void LowGfxRestore() {
     gLowGfxFns.setShadowDist(gLowGfx.shadowDist);
     gLowGfxFns.setLights(gLowGfx.lights);
     gLowGfxFns.setAniso(gLowGfx.aniso);
+    if (gLowGfxFns.setDiscard) gLowGfxFns.setDiscard(gLowGfx.discardMips);
+    if (gLowGfxFns.setStreamOut) gLowGfxFns.setStreamOut(gLowGfx.streamOut);
     gLowGfxFns.setSky(gLowGfx.sky);
     gLowGfxFns.setBloomBr(gLowGfx.bloomBr);
     gLowGfxFns.setBloomMp(gLowGfx.bloomMp);
@@ -1360,6 +1388,8 @@ static void ApplyLowGfx() {
         gLowGfx.shadowDist = gLowGfxFns.getShadowDist();
         gLowGfx.lights = gLowGfxFns.getLights();
         gLowGfx.aniso = gLowGfxFns.getAniso();
+        gLowGfx.discardMips = gLowGfxFns.getDiscard ? gLowGfxFns.getDiscard() : false;
+        gLowGfx.streamOut = gLowGfxFns.getStreamOut ? gLowGfxFns.getStreamOut() : 0.f;
         gLowGfx.unityQual = gLowGfxFns.getQual ? gLowGfxFns.getQual() : 0;
         gLowGfx.sysLevel = 0;
         if (LowGfxResolveSystemSetting() && gLowGfxSysInst && gLowGfxGetSysLevel) {
@@ -1379,6 +1409,11 @@ static void ApplyLowGfx() {
     int tex = LowGfxTargetTexLimit();
     if (tex < 0) tex = 0;
     if (gLowGfxFns.setTex) gLowGfxFns.setTex(tex);
+    if (gLowGfxFns.setGpuTex) gLowGfxFns.setGpuTex(tex);
+    if (tex >= 1) {
+        if (gLowGfxFns.setDiscard) gLowGfxFns.setDiscard(true);
+        if (gLowGfxFns.setStreamOut) gLowGfxFns.setStreamOut(0.f);
+    }
     static int gLowGfxAppliedQual = -2;
     if (!checkboxStates["LOWGFX"]) gLowGfxAppliedQual = -2;
     if (gLowGfxFns.setQual) {
@@ -1551,9 +1586,12 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0xC2BDF40")), (void*)hook_GetShotSpread
 // Wall shot: local gun keeps traveling after cover
 DOSHOOK((void*)(libunity_base + GET_OFF("0xD529DDC")), (void*)hook_get_MaxThroughWall, (void**)&orig_get_MaxThroughWall);
 
-// Block textures: game cannot raise masterTextureLimit while super low graphics is on
+// Block textures. QualitySettings.masterTextureLimit is ignored by CODM streaming.
+// UnityEngine.Texture.masterTextureLimit (dump 1.6.59) is the mip cap the GPU uses.
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53295B4")), (void*)hook_get_masterTextureLimit, (void**)&orig_get_masterTextureLimit);
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53295C4")), (void*)hook_set_masterTextureLimit, (void**)&orig_set_masterTextureLimit);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x534BC84")), (void*)hook_get_gpuTextureLimit, (void**)&orig_get_gpuTextureLimit);
+DOSHOOK((void*)(libunity_base + GET_OFF("0x534BC94")), (void*)hook_set_gpuTextureLimit, (void**)&orig_set_gpuTextureLimit);
 
 // No Shake
 DOSHOOK((void*)(libunity_base + GET_OFF("0x669780C")), (void*)&hook_UpdateCameraShake, (void**)&orig_UpdateCameraShake);
