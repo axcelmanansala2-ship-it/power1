@@ -175,6 +175,7 @@ static uint64_t SkinRoleModelHook(int roleId, int suitId, int clothId, int isUI)
     if (isUI && roleId > 0)
         gCharSeenUi.store((uint32_t)roleId, std::memory_order_relaxed);
     const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (isUI && e.model) return e.model;
     if (e.model && SkinCharListed(e, (uint32_t)roleId)) return e.model;
     return gSkinRoleModelFn ? gSkinRoleModelFn(roleId, suitId, clothId, isUI) : 0;
 }
@@ -182,6 +183,7 @@ static uint64_t SkinRoleModelHook(int roleId, int suitId, int clothId, int isUI)
 static int (*gSkinOutwardFn)(int, int, int) = nullptr;
 static int SkinOutwardHook(int roleId, int suitId, int isUI) {
     const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (isUI && e.skin) return (int)e.skin;
     if (e.skin && SkinCharListed(e, (uint32_t)roleId)) return (int)e.skin;
     return gSkinOutwardFn ? gSkinOutwardFn(roleId, suitId, isUI) : roleId;
 }
@@ -189,6 +191,7 @@ static int SkinOutwardHook(int roleId, int suitId, int isUI) {
 static int (*gSkinRoleForModelFn)(int, int, int, int) = nullptr;
 static int SkinRoleForModelHook(int roleId, int suitId, int clothId, int isUI) {
     const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (isUI && e.skin) return (int)e.skin;
     if (e.skin && SkinCharListed(e, (uint32_t)roleId)) return (int)e.skin;
     return gSkinRoleForModelFn ? gSkinRoleForModelFn(roleId, suitId, clothId, isUI) : roleId;
 }
@@ -196,8 +199,38 @@ static int SkinRoleForModelHook(int roleId, int suitId, int clothId, int isUI) {
 static uint32_t (*gSkinOutwardSiFn)(uint32_t, void*, int) = nullptr;
 static uint32_t SkinOutwardSiHook(uint32_t roleId, void* info, int isUI) {
     const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (isUI && e.skin) return e.skin;
     if (e.skin && SkinCharListed(e, roleId)) return e.skin;
     return gSkinOutwardSiFn ? gSkinOutwardSiFn(roleId, info, isUI) : roleId;
+}
+
+static uint32_t (*gSkinAvatarRoleFn)(void*) = nullptr;
+static uint32_t SkinAvatarRoleHook(void* self) {
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (e.skin) return e.skin;
+    return gSkinAvatarRoleFn ? gSkinAvatarRoleFn(self) : 0;
+}
+
+static uint64_t (*gSkinAvatarModelFn)(void*) = nullptr;
+static uint64_t SkinAvatarModelHook(void* self) {
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (e.model) return e.model;
+    return gSkinAvatarModelFn ? gSkinAvatarModelFn(self) : 0;
+}
+
+static void (*gSkinLoadRoleFn)(void*) = nullptr;
+static void SkinLoadRoleHook(void* self) {
+    const SkinCharEquip& e = gCharEquip[gCharEquipIdx.load(std::memory_order_acquire)];
+    if (self && e.skin) {
+        if (SkinRdOk(self, 0x80)) {
+            uint32_t cur = *(uint32_t*)((uintptr_t)self + 0x80);
+            if (cur) gCharSeenUi.store(cur, std::memory_order_relaxed);
+            *(uint32_t*)((uintptr_t)self + 0x80) = e.skin;
+        }
+        if (e.model && SkinRdOk(self, 0x68) && SkinRdOk(self, 0x6C))
+            *(uint64_t*)((uintptr_t)self + 0x68) = e.model;
+    }
+    if (gSkinLoadRoleFn) gSkinLoadRoleFn(self);
 }
 
 static void SkinInstallCharHooks() {
@@ -212,6 +245,12 @@ static void SkinInstallCharHooks() {
         DOSHOOK((void*)(libunity_base + 0x5F01BC8), (void*)SkinRoleForModelHook, (void**)&gSkinRoleForModelFn);
     if (!gSkinOutwardSiFn)
         DOSHOOK((void*)(libunity_base + 0x5F41BA0), (void*)SkinOutwardSiHook, (void**)&gSkinOutwardSiFn);
+    if (!gSkinAvatarRoleFn)
+        DOSHOOK((void*)(libunity_base + 0x76DF600), (void*)SkinAvatarRoleHook, (void**)&gSkinAvatarRoleFn);
+    if (!gSkinAvatarModelFn)
+        DOSHOOK((void*)(libunity_base + 0x76DF608), (void*)SkinAvatarModelHook, (void**)&gSkinAvatarModelFn);
+    if (!gSkinLoadRoleFn)
+        DOSHOOK((void*)(libunity_base + 0x76FA858), (void*)SkinLoadRoleHook, (void**)&gSkinLoadRoleFn);
 }
 
 static uint32_t SkinFnU32(uintptr_t rva, uint32_t id) {
