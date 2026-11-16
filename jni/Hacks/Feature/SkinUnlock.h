@@ -63,6 +63,7 @@ static std::vector<SkinRow> gSkinRows;
 static std::atomic<int> gSkinState{0};
 static int gSkinNameCursor = 0;
 static char gSkinSearch[64] = "";
+static std::vector<char> gSkinPicked;
 
 struct SkinHookSlot {
     void (*orig)(void*);
@@ -479,15 +480,14 @@ static void DrawSkinKeyboard() {
         if (i + 1 < 4) ImGui::SameLine(0.f, gap);
     }
 
-    float actW = (width - gap * 3.f) / 4.f;
+    float actW = (width - gap * 2.f) / 3.f;
     if (actW < 8.f) actW = 8.f;
     if (SkinKeyBtn("Space", uid++, actW, keyH)) SkinKeyAppend(" ");
     ImGui::SameLine(0.f, gap);
     if (SkinKeyBtn("<<", uid++, actW, keyH)) SkinKeyBack();
     ImGui::SameLine(0.f, gap);
     if (SkinKeyBtn(upper ? "Aa" : "aa", uid++, actW, keyH)) upper = !upper;
-    ImGui::SameLine(0.f, gap);
-    if (SkinKeyBtn("Clear", uid++, actW, keyH)) gSkinSearch[0] = 0;
+    if (SkinKeyBtn("Clear", uid++, width, keyH)) gSkinSearch[0] = 0;
 
     ImGui::PopStyleVar(2);
 }
@@ -518,10 +518,12 @@ static void DrawSkinTab() {
     else ImGui::TextUnformatted("...");
     ImGui::EndGroupPanel();
 
-    const float kbH = 34.f * 6.f + 36.f;
+    const float kbH = 34.f * 7.f + 40.f;
     float listH = ImGui::GetContentRegionAvail().y - kbH;
     if (listH < 90.f) listH = 90.f;
     ImGui::BeginChild("##skinlist", ImVec2(0, listH), true);
+    if (gSkinPicked.size() != gSkinRows.size())
+        gSkinPicked.assign(gSkinRows.size(), 0);
     std::string q = SkinLower(gSkinSearch);
     int shown = 0;
     const int cap = q.empty() ? 30 : 40;
@@ -535,9 +537,11 @@ static void DrawSkinTab() {
         }
         ++shown;
         ImGui::PushID((int)i + 1);
-        bool on = false;
-        if (g_widgets.checkbox(row.name.c_str(), &on) && on)
-            SkinApplyRow(row);
+        bool on = gSkinPicked[i] != 0;
+        if (g_widgets.checkbox(row.name.c_str(), &on)) {
+            gSkinPicked[i] = on ? 1 : 0;
+            if (on) SkinApplyRow(row);
+        }
         ImGui::PopID();
     }
     if (shown == 0) ImGui::TextUnformatted("No match.");
