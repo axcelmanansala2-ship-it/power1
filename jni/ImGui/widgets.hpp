@@ -7,7 +7,7 @@
 class CustomWidgets
 {
 public:
-    ImVec4 m_accent = ImVec4(0.42f, 0.44f, 0.65f, 1.0f);
+    ImVec4 m_accent = ImVec4(0.35f, 0.82f, 0.95f, 1.0f);
     
     std::unordered_map<ImGuiID, float> m_anim_state;
     
@@ -77,10 +77,11 @@ public:
     const ImGuiID id = window->GetID(label);
     const ImVec2 label_size = ImGui::CalcTextSize(label, NULL, true);
 
-    const float square_sz = 24.0f; // Increased from 14.0f to 24.0f (approx 70% bigger)
-    const float padding = 12.0f; // Increased padding
-    const ImVec2 pos = ImVec2(window->DC.CursorPos.x + padding, window->DC.CursorPos.y + 2);
-    const float row_height = ImMax(square_sz, label_size.y) + 12; // Increased row height
+    const float pill_w = 46.0f;
+    const float pill_h = 26.0f;
+    const float padding = 8.0f;
+    const ImVec2 pos = ImVec2(window->DC.CursorPos.x + padding, window->DC.CursorPos.y + 6);
+    const float row_height = ImMax(pill_h, label_size.y) + 16.0f;
     
     const ImRect total_bb(ImVec2(window->DC.CursorPos.x, window->DC.CursorPos.y), 
                           ImVec2(window->DC.CursorPos.x + ImGui::GetContentRegionAvail().x, window->DC.CursorPos.y + row_height));
@@ -99,26 +100,16 @@ public:
     float anim = animate(id, *v);
     float hover_anim = animate(id + 10000, hovered, 15.0f);
 
-    const ImRect check_bb(pos, ImVec2(pos.x + square_sz, pos.y + square_sz));
-    
-    ImU32 border_col = lerp_color(IM_COL32(55, 55, 60, 255), ImGui::GetColorU32(m_accent), hover_anim);
-    window->DrawList->AddRectFilled(check_bb.Min, check_bb.Max, IM_COL32(35, 35, 40, 255), 4.0f); // Increased rounding
-    window->DrawList->AddRect(check_bb.Min, check_bb.Max, border_col, 4.0f, 0, 2.5f); // Thicker border
-    
-    if (anim > 0.01f)
-    {
-        float inner_pad = 5.0f; // Increased inner padding
-        float fill_size = (square_sz - inner_pad * 2) * ease_out_quad(anim);
-        float offset = (square_sz - fill_size) * 0.5f;
-        ImVec2 fill_min = ImVec2(check_bb.Min.x + offset, check_bb.Min.y + offset);
-        ImVec2 fill_max = ImVec2(fill_min.x + fill_size, fill_min.y + fill_size);
-        
-        ImU32 fill_col = ImGui::GetColorU32(ImVec4(m_accent.x, m_accent.y, m_accent.z, anim));
-        window->DrawList->AddRectFilled(fill_min, fill_max, fill_col, 3.0f); // Increased rounding on fill
-    }
-    
-    ImVec2 label_pos = ImVec2(check_bb.Max.x + 12, pos.y + (square_sz - label_size.y) * 0.5f); // Increased spacing
-    ImU32 text_col = lerp_color(IM_COL32(140, 140, 145, 255), IM_COL32(220, 220, 225, 255), anim);
+    ImVec2 pill_min(total_bb.Max.x - pill_w - padding, pos.y);
+    ImVec2 pill_max(pill_min.x + pill_w, pill_min.y + pill_h);
+    ImU32 track = lerp_color(IM_COL32(42, 46, 54, 255), ImGui::GetColorU32(m_accent), anim);
+    window->DrawList->AddRectFilled(pill_min, pill_max, track, pill_h * 0.5f);
+    float knob = pill_h - 6.0f;
+    float knob_x = pill_min.x + 3.0f + (pill_w - knob - 6.0f) * anim;
+    window->DrawList->AddCircleFilled(ImVec2(knob_x + knob * 0.5f, pill_min.y + pill_h * 0.5f), knob * 0.5f, IM_COL32(245, 248, 250, 255), 16);
+
+    ImVec2 label_pos = ImVec2(pos.x, pos.y + (pill_h - label_size.y) * 0.5f);
+    ImU32 text_col = lerp_color(IM_COL32(150, 156, 164, 255), IM_COL32(236, 240, 244, 255), ImMax(anim, hover_anim * 0.6f));
     window->DrawList->AddText(label_pos, text_col, label);
 
     return pressed;

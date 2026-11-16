@@ -213,13 +213,14 @@ inline void WCSlider(const char* label, float* v, float v_min, float v_max) {
     float grab = pos.x + width * t;
 
     draw->AddRectFilled(
-        ImVec2(pos.x, pos.y + height * 0.5f - track_h * 0.5f),
-        ImVec2(pos.x + width, pos.y + height * 0.5f + track_h * 0.5f),
-        ImGui::GetColorU32(ImGuiCol_FrameBg), track_h * 0.5f);
+        ImVec2(pos.x, pos.y + height * 0.5f - 3.f),
+        ImVec2(pos.x + width, pos.y + height * 0.5f + 3.f),
+        IM_COL32(255, 255, 255, 18), 3.f);
     draw->AddRectFilled(
-        ImVec2(pos.x, pos.y + height * 0.5f - track_h * 0.5f),
-        ImVec2(grab, pos.y + height * 0.5f + track_h * 0.5f),
-        ImGui::GetColorU32(ImGuiCol_SliderGrabActive), track_h * 0.5f);
+        ImVec2(pos.x, pos.y + height * 0.5f - 3.f),
+        ImVec2(grab, pos.y + height * 0.5f + 3.f),
+        IM_COL32(70, 196, 230, 255), 3.f);
+    draw->AddCircleFilled(ImVec2(grab, pos.y + height * 0.5f), 7.f, IM_COL32(245, 248, 250, 255), 16);
 
     ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + height + style.ItemSpacing.y));
 }

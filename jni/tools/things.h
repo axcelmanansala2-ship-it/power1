@@ -23,11 +23,8 @@ bool CustomSliderFloat(const char* label, float* v, float v_min, float v_max, co
     // Get draw list
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    // Draw label (top-left)
-    draw_list->AddText(pos, ImGui::GetColorU32(ImGuiCol_Text), label);
-
-    // Draw value (top-right)
-    draw_list->AddText(ImVec2(pos.x + width - value_size.x, pos.y), ImGui::GetColorU32(ImGuiCol_Text), value_buf);
+    draw_list->AddText(pos, IM_COL32(168, 176, 186, 255), label);
+    draw_list->AddText(ImVec2(pos.x + width - value_size.x, pos.y), IM_COL32(90, 210, 235, 255), value_buf);
 
     // Move cursor below label/value
     float text_height = (label_size.y > value_size.y) ? label_size.y : value_size.y;
@@ -47,26 +44,27 @@ bool CustomSliderFloat(const char* label, float* v, float v_min, float v_max, co
         changed = true;
     }
 
-    // Increased track thickness
-    float track_height = height * 0.45f; // Previously 0.15f
-    float t = (*v - v_min) / (v_max - v_min);
+    float track_height = 6.0f;
+    float t = (v_max > v_min) ? (*v - v_min) / (v_max - v_min) : 0.f;
+    if (t < 0.f) t = 0.f;
+    if (t > 1.f) t = 1.f;
     float grab_pos = pos.x + width * t;
+    float mid = pos.y + height * 0.5f;
 
-    // Draw slider background (track)
     draw_list->AddRectFilled(
-        ImVec2(pos.x, pos.y + height / 2 - track_height / 2),
-        ImVec2(pos.x + width, pos.y + height / 2 + track_height / 2),
-        ImGui::GetColorU32(ImGuiCol_FrameBg),
-        track_height * 0.5f
+        ImVec2(pos.x, mid - track_height * 0.5f),
+        ImVec2(pos.x + width, mid + track_height * 0.5f),
+        IM_COL32(255, 255, 255, 18),
+        track_height
     );
-
-    // Draw filled portion of the slider
     draw_list->AddRectFilled(
-        ImVec2(pos.x, pos.y + height / 2 - track_height / 2),
-        ImVec2(grab_pos, pos.y + height / 2 + track_height / 2),
-        ImGui::GetColorU32(ImGuiCol_SliderGrabActive),
-        track_height * 0.5f
+        ImVec2(pos.x, mid - track_height * 0.5f),
+        ImVec2(grab_pos, mid + track_height * 0.5f),
+        active ? IM_COL32(120, 220, 245, 255) : IM_COL32(70, 196, 230, 255),
+        track_height
     );
+    draw_list->AddCircleFilled(ImVec2(grab_pos, mid), active ? 9.0f : 7.0f, IM_COL32(245, 248, 250, 255), 16);
+    ImGui::Dummy(ImVec2(0, 6));
 
     return changed;
 }
@@ -76,21 +74,30 @@ bool CustomSliderFloat(const char* label, float* v, float v_min, float v_max, co
 
 int DrawMacOSHeaderButtons()
 {
-    const float btn = 48.0f;
+    const float btn = 40.0f;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextColored(ImVec4(0.94f, 0.96f, 0.98f, 1.f), "Accel");
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.45f, 0.50f, 0.56f, 1.f), "menu");
     float right = ImGui::GetWindowContentRegionMax().x - btn;
     if (right < 8.0f) right = 8.0f;
-    ImGui::SetCursorPosX(right);
+    ImGui::SameLine(right);
 
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.22f, 0.24f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.32f, 0.32f, 0.34f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.40f, 0.40f, 0.42f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.92f, 0.92f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.f, 1.f, 1.f, 0.06f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.28f, 0.32f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.85f, 0.28f, 0.32f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.96f, 0.98f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, btn * 0.5f);
 
-    int action = ImGui::Button("-", ImVec2(btn, btn)) ? 1 : 0;
+    int action = ImGui::Button("x##close", ImVec2(btn, btn)) ? 1 : 0;
 
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(4);
+    ImGui::Dummy(ImVec2(0, 4));
+    ImVec2 line = ImGui::GetCursorScreenPos();
+    float width = ImGui::GetContentRegionAvail().x;
+    ImGui::GetWindowDrawList()->AddLine(line, ImVec2(line.x + width, line.y), IM_COL32(255, 255, 255, 22), 1.f);
+    ImGui::Dummy(ImVec2(0, 6));
     return action;
 }
 
