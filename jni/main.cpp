@@ -325,6 +325,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             { ICON_FA_MICROCHIP,  "Memory", 3, 0.0f },
             { ICON_FA_BULLSEYE,   "Guns",   7, 0.0f },
             { ICON_FA_TSHIRT,     "Skin",   10, 0.0f },
+            { ICON_FA_USER,       "Char",   11, 0.0f },
             { ICON_FA_COGS,       "Setup",  5, 0.0f },
             { ICON_FA_SHIELD,     "Shield", 8, 0.0f },
         };
@@ -598,6 +599,11 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
         {
             ImGui::Spacing();
             DrawSkinTab();
+        }
+        if (tab == 11)
+        {
+            ImGui::Spacing();
+            DrawCharTab();
         }
         if (tab == 8)
         {

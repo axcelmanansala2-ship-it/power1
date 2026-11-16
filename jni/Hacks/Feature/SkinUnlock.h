@@ -207,78 +207,7 @@ static const uintptr_t kCharModelOff[12] = {
     0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40, 0x44
 };
 
-// Dump 1.6.59. The lobby body is not RoleConf. GetRoleModelID returns the
-// CharacterModel item id, GetRoleAssets writes BRModel/BRHead/BRBag (BRLobby
-// in the UI), then GetSuitData/GetClothData can cover that body. These four
-// are installed on a character click, after the lobby has loaded.
-static constexpr uintptr_t kSkinRvaGetRoleModel = 0x5F41930;
-static constexpr uintptr_t kSkinRvaGetRoleAssets = 0x5F550F8;
-static constexpr uintptr_t kSkinRvaGetSuitData = 0x5F572E0;
-static constexpr uintptr_t kSkinRvaGetClothData = 0x5F57460;
-
-static int gCharBag = 0, gCharHead = 0, gCharLobby = 0, gCharBody = 0;
-static uint64_t gCharAvatar = 0;
-static uint64_t (*gOrigGetRoleModel)(int, int, int, int, void*) = nullptr;
-static bool (*gOrigRoleAssets)(uint64_t, int, int, int*, int*, int*, void*) = nullptr;
-static void (*gOrigSuitData)(uint32_t, uint64_t*, void*, int, void*) = nullptr;
-static void (*gOrigClothData)(uint32_t, uint64_t*, void*, int, void*) = nullptr;
-static bool gCharHookOn = false;
-
-static bool SkinPtrOk(void* p) {
-    return p && Tools::IsPtrValid(p);
-}
-
-static uint64_t SkinGetRoleModel(int roleId, int suitId, int clothId, int isUI, void* method) {
-    if (gCharAvatar) return gCharAvatar;
-    if (!gOrigGetRoleModel) return 0;
-    return gOrigGetRoleModel(roleId, suitId, clothId, isUI, method);
-}
-
-static bool SkinGetRoleAssets(uint64_t modelId, int isUI, int loadDefault,
-                              int* body, int* head, int* bag, void* method) {
-    bool ok = false;
-    if (gOrigRoleAssets)
-        ok = gOrigRoleAssets(modelId, isUI, loadDefault, body, head, bag, method);
-    int useBody = (isUI && gCharLobby) ? gCharLobby : gCharBody;
-    if (!useBody) useBody = gCharLobby ? gCharLobby : gCharBody;
-    if (useBody && SkinPtrOk(body)) {
-        *body = useBody;
-        ok = true;
-    }
-    if (gCharHead && SkinPtrOk(head)) *head = gCharHead;
-    if (gCharBag && SkinPtrOk(bag)) *bag = gCharBag;
-    return ok;
-}
-
-static void SkinClearCover(void (*orig)(uint32_t, uint64_t*, void*, int, void*),
-                           uint32_t id, uint64_t* model, void* mats, int isUI, void* method) {
-    if (orig) orig(id, model, mats, isUI, method);
-    if ((gCharBody || gCharLobby) && model &&
-        SkinPtrOk(model) && SkinPtrOk((void*)((uintptr_t)model + 4)))
-        *model = 0;
-}
-
-static void SkinGetSuit(uint32_t id, uint64_t* model, void* mats, int isUI, void* method) {
-    SkinClearCover(gOrigSuitData, id, model, mats, isUI, method);
-}
-
-static void SkinGetCloth(uint32_t id, uint64_t* model, void* mats, int isUI, void* method) {
-    SkinClearCover(gOrigClothData, id, model, mats, isUI, method);
-}
-
-static void SkinEnsureCharHook() {
-    if (gCharHookOn || !libunity_base) return;
-    if (!gCharAvatar && !gCharBody && !gCharLobby) return;
-    gCharHookOn = true;
-    DOSHOOK((void*)(libunity_base + kSkinRvaGetRoleModel),
-            (void*)SkinGetRoleModel, (void**)&gOrigGetRoleModel);
-    DOSHOOK((void*)(libunity_base + kSkinRvaGetRoleAssets),
-            (void*)SkinGetRoleAssets, (void**)&gOrigRoleAssets);
-    DOSHOOK((void*)(libunity_base + kSkinRvaGetSuitData),
-            (void*)SkinGetSuit, (void**)&gOrigSuitData);
-    DOSHOOK((void*)(libunity_base + kSkinRvaGetClothData),
-            (void*)SkinGetCloth, (void**)&gOrigClothData);
-}
+static int gCharHave = 0;
 
 static void SkinPaintRole(uint32_t dstRole, uint64_t skinAvatar, const SkinRow& row,
                           const std::vector<void*>& roles,
@@ -324,9 +253,9 @@ static void SkinPaintRole(uint32_t dstRole, uint64_t skinAvatar, const SkinRow& 
     }
 }
 
-static void SkinApplyChar(const SkinRow& row) {
+static void SkinApplyChar(uint32_t dstRole, const SkinRow& row) {
     uint32_t skinRole = (uint32_t)row.skinId;
-    if (!skinRole) return;
+    if (!dstRole || !skinRole || dstRole == skinRole) return;
 
     pthread_mutex_lock(&gSkinMu);
     std::vector<void*> roles = gSkinRole;
@@ -334,66 +263,19 @@ static void SkinApplyChar(const SkinRow& row) {
     std::vector<void*> res = gSkinRes;
     pthread_mutex_unlock(&gSkinMu);
 
-    uint64_t skinAvatar = 0;
-    for (void* r : res) {
-        if ((uint32_t)SkinRdI(r, 0x1C) != skinRole) continue;
-        skinAvatar = SkinRdU64(r, 0x28);
-        break;
-    }
-
-    if (!skinAvatar) skinAvatar = row.avatar;
-    int bag = row.modelF[0];
-    int head = row.modelF[1];
-    int lobby = row.modelF[2];
-    int body = row.modelF[3];
-    if (!body && !lobby && skinAvatar) {
-        for (void* m : models) {
-            if (SkinRdU64(m, 0x78) != skinAvatar) continue;
-            bag = SkinRdI(m, 0x18);
-            head = SkinRdI(m, 0x1C);
-            lobby = SkinRdI(m, 0x20);
-            body = SkinRdI(m, 0x24);
+    uint64_t skinAvatar = row.avatar;
+    if (!skinAvatar) {
+        for (void* r : res) {
+            if ((uint32_t)SkinRdI(r, 0x1C) != skinRole) continue;
+            skinAvatar = SkinRdU64(r, 0x28);
             break;
         }
     }
-    gCharBag = bag;
-    gCharHead = head;
-    gCharLobby = lobby;
-    gCharBody = body;
-    gCharAvatar = skinAvatar;
-
-    uint32_t group = (uint32_t)row.baseId;
-    if (!group) {
-        for (void* role : roles) {
-            if ((uint32_t)SkinRdI(role, 0x34) != skinRole) continue;
-            group = (uint32_t)SkinRdI(role, 0x10);
-            break;
-        }
-    }
-    uint32_t ids[48];
-    int nIds = 0;
-    auto add = [&](uint32_t id) {
-        if (!id || id == skinRole || nIds >= 48) return;
-        for (int i = 0; i < nIds; ++i)
-            if (ids[i] == id) return;
-        ids[nIds++] = id;
-    };
-    add(group);
-    for (void* role : roles) {
-        uint32_t id = (uint32_t)SkinRdI(role, 0x34);
-        uint32_t base = (uint32_t)SkinRdI(role, 0x10);
-        if (group && (id == group || base == group)) add(id);
-    }
-    for (int i = 0; i < nIds; ++i)
-        SkinPaintRole(ids[i], skinAvatar, row, roles, models, res);
-    if (gCharAvatar || gCharBody || gCharLobby) SkinEnsureCharHook();
+    SkinPaintRole(dstRole, skinAvatar, row, roles, models, res);
 }
 
 static void SkinApplyRow(const SkinRow& row) {
-    if (row.kind == 1) {
-        SkinApplyChar(row);
-        return;
-    }
+    if (row.kind == 1) return;
     if (row.baseId == 0 && row.skinId == 0) return;
     pthread_mutex_lock(&gSkinMu);
     std::vector<void*> inv = gSkinInv;
@@ -780,6 +662,87 @@ static void DrawSkinKeyboard() {
     ImGui::PopStyleVar(2);
 }
 
+static void SkinLabel(const SkinRow& row, char* out, int n) {
+    snprintf(out, n, "%d  %s", row.skinId, row.name.c_str());
+}
+
+static bool SkinMatch(const SkinRow& row, const std::string& q) {
+    if (q.empty()) return true;
+    if (row.low.find(q) != std::string::npos) return true;
+    char id[16];
+    snprintf(id, sizeof(id), "%d", row.skinId);
+    return strstr(id, q.c_str()) != nullptr;
+}
+
+static void DrawCharTab() {
+    ImGui::Text(ICON_FA_USER "  Character");
+    ImGui::Separator();
+    ImGui::BeginGroupPanel("Character", ImVec2(-1, 0));
+    g_widgets.checkbox("Load character list", &checkboxStates["SKIN::LOAD"]);
+    int st = gSkinState.load(std::memory_order_acquire);
+    static int step = 0;
+    if (ImGui::Button("1 Equipped")) step = 0;
+    ImGui::SameLine();
+    if (ImGui::Button("2 Skin")) step = 1;
+    ImGui::SameLine();
+    ImGui::TextUnformatted(step == 0 ? "picking equipped" : "picking skin");
+    if (gCharHave) {
+        char have[48];
+        snprintf(have, sizeof(have), "Equipped id %d", gCharHave);
+        ImGui::TextUnformatted(have);
+    } else {
+        ImGui::TextUnformatted("Pick the character you have on.");
+    }
+    if (st == 1) ImGui::TextUnformatted("Reading character tables...");
+    else if (st == 3) ImGui::TextUnformatted("No tables yet. Toggle again in the lobby.");
+    ImGui::EndGroupPanel();
+
+    if (st != 2 || gSkinRows.empty()) return;
+    SkinFillNames();
+    ImGui::Spacing();
+    ImGui::BeginGroupPanel(step == 0 ? "Equipped id" : "Skin to replace", ImVec2(-1, 0));
+    if (gSkinSearch[0]) ImGui::TextUnformatted(gSkinSearch);
+    else ImGui::TextUnformatted("...");
+    ImGui::EndGroupPanel();
+
+    const float kbH = 34.f * 7.f + 40.f;
+    float listH = ImGui::GetContentRegionAvail().y - kbH;
+    if (listH < 90.f) listH = 90.f;
+    ImGui::BeginChild("##charlist", ImVec2(0, listH), true);
+    if (gSkinPicked.size() != gSkinRows.size())
+        gSkinPicked.assign(gSkinRows.size(), 0);
+    std::string q = SkinLower(gSkinSearch);
+    int shown = 0;
+    const int cap = q.empty() ? 30 : 40;
+    for (size_t i = 0; i < gSkinRows.size(); ++i) {
+        const SkinRow& row = gSkinRows[i];
+        if (row.kind != 1) continue;
+        if (!SkinMatch(row, q)) continue;
+        if (shown >= cap) {
+            ImGui::TextUnformatted(q.empty() ? "Search to see more." : "Keep typing to narrow.");
+            break;
+        }
+        ++shown;
+        char lab[96];
+        SkinLabel(row, lab, sizeof(lab));
+        ImGui::PushID((int)i + 1);
+        bool on = step == 0 ? (gCharHave == row.skinId) : (gSkinPicked[i] != 0);
+        if (g_widgets.checkbox(lab, &on)) {
+            if (step == 0) {
+                gCharHave = on ? row.skinId : 0;
+            } else if (gCharHave) {
+                gSkinPicked[i] = on ? 1 : 0;
+                if (on) SkinApplyChar((uint32_t)gCharHave, row);
+            }
+        }
+        ImGui::PopID();
+    }
+    if (shown == 0) ImGui::TextUnformatted("No match.");
+    ImGui::EndChild();
+    ImGui::Spacing();
+    DrawSkinKeyboard();
+}
+
 static void DrawSkinTab() {
     ImGui::Text(ICON_FA_TSHIRT "  Skin");
     ImGui::Separator();
@@ -817,16 +780,18 @@ static void DrawSkinTab() {
     const int cap = q.empty() ? 30 : 40;
     for (size_t i = 0; i < gSkinRows.size(); ++i) {
         const SkinRow& row = gSkinRows[i];
-        if (!q.empty() && row.low.find(q) == std::string::npos)
-            continue;
+        if (row.kind == 1) continue;
+        if (!SkinMatch(row, q)) continue;
         if (shown >= cap) {
             ImGui::TextUnformatted(q.empty() ? "Search to see more." : "Keep typing to narrow.");
             break;
         }
         ++shown;
+        char lab[96];
+        SkinLabel(row, lab, sizeof(lab));
         ImGui::PushID((int)i + 1);
         bool on = gSkinPicked[i] != 0;
-        if (g_widgets.checkbox(row.name.c_str(), &on)) {
+        if (g_widgets.checkbox(lab, &on)) {
             gSkinPicked[i] = on ? 1 : 0;
             if (on) SkinApplyRow(row);
         }
