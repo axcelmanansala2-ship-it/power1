@@ -39,6 +39,7 @@
 
 
 static CustomWidgets g_widgets;
+#include "Hacks/Feature/SkinUnlock.h"
 
 
 struct TextureInfo { 
@@ -323,6 +324,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             { ICON_FA_CROSSHAIRS, "Aim",    2, 0.0f },
             { ICON_FA_MICROCHIP,  "Memory", 3, 0.0f },
             { ICON_FA_BULLSEYE,   "Guns",   7, 0.0f },
+            { ICON_FA_TSHIRT,     "Skin",   10, 0.0f },
             { ICON_FA_COGS,       "Setup",  5, 0.0f },
             { ICON_FA_SHIELD,     "Shield", 8, 0.0f },
         };
@@ -592,6 +594,11 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
             ImGui::Spacing();
             WeaponCfg::DrawTab();
         }
+        if (tab == 10)
+        {
+            ImGui::Spacing();
+            DrawSkinTab();
+        }
         if (tab == 8)
         {
             ImGui::Spacing();
@@ -627,6 +634,7 @@ if (g_Initialized) {
     ApplyFpsBoost();
     ApplyGraphicsLevel();
     ApplyLowGfx();
+    SkinTick();
 }
 ImGui::Render();
 ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -647,6 +655,7 @@ void Init_Thread(){
     
     INIT_OFFSETS();
     hooking();
+    SkinInstallHooks();
     
     DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     started = true;
