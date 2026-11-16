@@ -1175,7 +1175,6 @@ struct LowGfxSaved {
     float shadowDist;
     int lights;
     int aniso;
-    int lod;
     bool sky;
     bool bloomBr, bloomMp, bloomPve;
     bool godBr, godPve;
@@ -1195,8 +1194,6 @@ struct LowGfxFns {
     void (*setLights)(int);
     int (*getAniso)();
     void (*setAniso)(int);
-    int (*getLod)();
-    void (*setLod)(int);
     bool (*getSky)();
     void (*setSky)(bool);
     bool (*getBloomBr)();
@@ -1230,8 +1227,6 @@ static bool LowGfxBind() {
     gLowGfxFns.setLights = (void (*)(int))(base + 0x5329324);
     gLowGfxFns.getAniso = (int (*)())(base + 0x53295E0);
     gLowGfxFns.setAniso = (void (*)(int))(base + 0x53295F0);
-    gLowGfxFns.getLod = (int (*)())(base + 0x533BD8C);
-    gLowGfxFns.setLod = (void (*)(int))(base + 0x533BD9C);
     gLowGfxFns.getSky = (bool (*)())(base + 0x52ED91C);
     gLowGfxFns.setSky = (void (*)(bool))(base + 0x52ED92C);
     gLowGfxFns.getBloomBr = (bool (*)())(base + 0xAFBD104);
@@ -1259,7 +1254,6 @@ static void LowGfxRestore() {
     gLowGfxFns.setShadowDist(gLowGfx.shadowDist);
     gLowGfxFns.setLights(gLowGfx.lights);
     gLowGfxFns.setAniso(gLowGfx.aniso);
-    gLowGfxFns.setLod(gLowGfx.lod);
     gLowGfxFns.setSky(gLowGfx.sky);
     gLowGfxFns.setBloomBr(gLowGfx.bloomBr);
     gLowGfxFns.setBloomMp(gLowGfx.bloomMp);
@@ -1286,7 +1280,6 @@ static void ApplyLowGfx() {
         gLowGfx.shadowDist = gLowGfxFns.getShadowDist();
         gLowGfx.lights = gLowGfxFns.getLights();
         gLowGfx.aniso = gLowGfxFns.getAniso();
-        gLowGfx.lod = gLowGfxFns.getLod();
         gLowGfx.sky = gLowGfxFns.getSky();
         gLowGfx.bloomBr = gLowGfxFns.getBloomBr();
         gLowGfx.bloomMp = gLowGfxFns.getBloomMp();
@@ -1297,13 +1290,10 @@ static void ApplyLowGfx() {
         gLowGfx.waterPve = gLowGfxFns.getWaterPve();
         gLowGfx.have = true;
     }
-    int tex = gLowGfx.tex + (int)((3 - gLowGfx.tex) * t + 0.5f);
+    int tex = gLowGfx.tex + (int)((2 - gLowGfx.tex) * t + 0.5f);
     if (tex < 0) tex = 0;
-    if (tex > 3) tex = 3;
-    int lod = gLowGfx.lod + (int)((100 - gLowGfx.lod) * t);
-    if (lod < 100) lod = 100;
+    if (tex > 2) tex = 2;
     gLowGfxFns.setTex(tex);
-    gLowGfxFns.setLod(lod);
     gLowGfxFns.setAniso(t >= 0.34f ? 0 : gLowGfx.aniso);
     bool flat = t >= 0.34f;
     gLowGfxFns.setBloomBr(flat ? false : gLowGfx.bloomBr);
@@ -1317,7 +1307,6 @@ static void ApplyLowGfx() {
     gLowGfxFns.setShadows(brutal ? 0 : gLowGfx.shadows);
     gLowGfxFns.setShadowDist(brutal ? 0.f : gLowGfx.shadowDist);
     gLowGfxFns.setLights(brutal ? 0 : gLowGfx.lights);
-    gLowGfxFns.setSky(brutal ? true : gLowGfx.sky);
 }
 
 static int (*orig_get_MaxThroughWall)(void* instance);
