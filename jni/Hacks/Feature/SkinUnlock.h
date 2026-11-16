@@ -39,6 +39,7 @@ static constexpr uintptr_t kSkinRvaWeaponName     = 0x85D6744;
 static constexpr uintptr_t kSkinRvaRoleConf       = 0xBAE6244;
 static constexpr uintptr_t kSkinRvaRoleName       = 0xBAE8444;
 static constexpr uintptr_t kSkinRvaCharModel      = 0xA30A6B8;
+static constexpr uintptr_t kSkinRvaRoleBase       = 0xBAE5948;
 
 struct SkinRow {
     std::string name;
@@ -72,7 +73,7 @@ struct SkinRow {
 
 static std::vector<void*> gSkinInv, gSkinExtra, gSkinFire, gSkinConf, gSkinAsset;
 static std::vector<void*> gSkinArmor, gSkinSight, gSkinKill, gSkinRes;
-static std::vector<void*> gSkinRole, gSkinModel;
+static std::vector<void*> gSkinRole, gSkinModel, gSkinBase;
 static pthread_mutex_t gSkinMu = PTHREAD_MUTEX_INITIALIZER;
 static std::vector<SkinRow> gSkinRows;
 static std::atomic<int> gSkinState{0};
@@ -85,7 +86,7 @@ struct SkinHookSlot {
     void (*orig)(void*);
     std::vector<void*>* vec;
 };
-static SkinHookSlot gSkinSlots[11];
+static SkinHookSlot gSkinSlots[12];
 
 template <int N>
 static void SkinCtorHook(void* self) {
@@ -125,6 +126,22 @@ static void SkinWrI(void* p, uintptr_t off, int v) {
 static void SkinWrB(void* p, uintptr_t off, uint8_t v) {
     if (!SkinRdOk(p, off)) return;
     *(uint8_t*)((uintptr_t)p + off) = v;
+}
+
+static void SkinWrU64(void* p, uintptr_t off, uint64_t v) {
+    if (!SkinRdOk(p, off) || !SkinRdOk(p, off + 4)) return;
+    *(uint64_t*)((uintptr_t)p + off) = v;
+}
+
+static bool SkinArrHasU32(void* obj, uintptr_t off, uint32_t want) {
+    if (!want || !SkinRdOk(obj, off)) return false;
+    auto arr = *(Array<int>**)((uintptr_t)obj + off);
+    if (!Tools::IsPtrValid(arr)) return false;
+    int n = arr->getLength();
+    if (n <= 0 || n > 64) return false;
+    for (int i = 0; i < n; ++i)
+        if ((uint32_t)arr->m_Items[i] == want) return true;
+    return false;
 }
 
 static int SkinLastInt(void* obj, uintptr_t off) {
@@ -193,46 +210,95 @@ static void SkinInstallHooks() {
     SkinHookOne(8, kSkinRvaItemResource, &gSkinRes, (void*)SkinCtorHook<8>);
     SkinHookOne(9, kSkinRvaRoleConf, &gSkinRole, (void*)SkinCtorHook<9>);
     SkinHookOne(10, kSkinRvaCharModel, &gSkinModel, (void*)SkinCtorHook<10>);
+    SkinHookOne(11, kSkinRvaRoleBase, &gSkinBase, (void*)SkinCtorHook<11>);
 }
 
 static const uintptr_t kCharModelOff[12] = {
     0x18, 0x1C, 0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40, 0x44
 };
 
+static void SkinPaintRole(uint32_t dstRole, uint64_t skinAvatar, const SkinRow& row,
+                          const std::vector<void*>& roles,
+                          const std::vector<void*>& models,
+                          const std::vector<void*>& res) {
+    if (!dstRole) return;
+    uint64_t dstAvatar = 0;
+    for (void* r : res) {
+        if ((uint32_t)SkinRdI(r, 0x1C) != dstRole) continue;
+        dstAvatar = SkinRdU64(r, 0x28);
+        if (row.fx) SkinWrI(r, 0x18, row.fx);
+        if (row.invModel) SkinWrI(r, 0x20, row.invModel);
+        if (row.modelRaw) SkinWrI(r, 0x24, row.modelRaw);
+        if (skinAvatar) SkinWrU64(r, 0x28, skinAvatar);
+        break;
+    }
+    for (void* role : roles) {
+        if ((uint32_t)SkinRdI(role, 0x34) != dstRole) continue;
+        if (row.arm) SkinWrI(role, 0x14, row.arm);
+        if (row.suit) SkinWrI(role, 0x18, row.suit);
+        if (row.holo) SkinWrI(role, 0x1C, row.holo);
+        if (row.color) SkinWrB(role, 0x22, (uint8_t)row.color);
+        if (row.pack) SkinWrI(role, 0x44, row.pack);
+        break;
+    }
+    if (!dstAvatar) return;
+    void* dstMesh = nullptr;
+    void* srcMesh = nullptr;
+    for (void* m : models) {
+        uint64_t id = SkinRdU64(m, 0x78);
+        if (!dstMesh && id == dstAvatar) dstMesh = m;
+        if (!srcMesh && skinAvatar && id == skinAvatar) srcMesh = m;
+    }
+    if (srcMesh && dstMesh && srcMesh != dstMesh) {
+        for (int i = 0; i < 12; ++i) {
+            int v = SkinRdI(srcMesh, kCharModelOff[i]);
+            if (v) SkinWrI(dstMesh, kCharModelOff[i], v);
+        }
+    } else if (dstMesh && row.hasModel) {
+        for (int i = 0; i < 12; ++i) {
+            if (row.modelF[i]) SkinWrI(dstMesh, kCharModelOff[i], row.modelF[i]);
+        }
+    }
+}
+
 static void SkinApplyChar(const SkinRow& row) {
-    if (!row.baseId || row.baseId == row.skinId) return;
+    uint32_t skinRole = (uint32_t)row.skinId;
+    if (!skinRole) return;
+
     pthread_mutex_lock(&gSkinMu);
     std::vector<void*> roles = gSkinRole;
     std::vector<void*> models = gSkinModel;
     std::vector<void*> res = gSkinRes;
+    std::vector<void*> bases = gSkinBase;
     pthread_mutex_unlock(&gSkinMu);
 
-    for (void* role : roles) {
-        if (SkinRdI(role, 0x34) != row.baseId) continue;
-        if (row.arm) SkinWrI(role, 0x14, row.arm);
-        if (row.suit) SkinWrI(role, 0x18, row.suit);
-        if (row.holo) SkinWrI(role, 0x1C, row.holo);
-        SkinWrB(role, 0x22, (uint8_t)row.color);
-        if (row.pack) SkinWrI(role, 0x44, row.pack);
+    uint64_t skinAvatar = 0;
+    for (void* r : res) {
+        if ((uint32_t)SkinRdI(r, 0x1C) != skinRole) continue;
+        skinAvatar = SkinRdU64(r, 0x28);
+        break;
     }
 
-    uint64_t baseAvatar = 0;
-    for (void* r : res) {
-        if (SkinRdI(r, 0x1C) != row.baseId) continue;
-        baseAvatar = SkinRdU64(r, 0x28);
-        if (row.fx) SkinWrI(r, 0x18, row.fx);
-        if (row.invModel) SkinWrI(r, 0x20, row.invModel);
-        if (row.modelRaw) SkinWrI(r, 0x24, row.modelRaw);
-        break;
+    uint32_t group = (uint32_t)row.baseId;
+    uint32_t owned = 0;
+    void* hit = nullptr;
+    for (void* b : bases) {
+        if (SkinArrHasU32(b, 0x28, skinRole)) { hit = b; break; }
     }
-    if (!baseAvatar || !row.hasModel) return;
-    for (void* m : models) {
-        if (SkinRdU64(m, 0x78) != baseAvatar) continue;
-        for (int i = 0; i < 12; ++i) {
-            if (row.modelF[i]) SkinWrI(m, kCharModelOff[i], row.modelF[i]);
+    if (!hit && group) {
+        for (void* b : bases) {
+            if ((uint32_t)SkinRdI(b, 0x1C) == group) { hit = b; break; }
         }
-        break;
     }
+    if (hit) {
+        uint32_t cur = (uint32_t)SkinRdI(hit, 0x18);
+        if (cur && cur != skinRole) owned = cur;
+        SkinWrI(hit, 0x18, (int)skinRole);
+    }
+    if (!owned && group && group != skinRole) owned = group;
+
+    if (owned && owned != skinRole)
+        SkinPaintRole(owned, skinAvatar, row, roles, models, res);
 }
 
 static void SkinApplyRow(const SkinRow& row) {
