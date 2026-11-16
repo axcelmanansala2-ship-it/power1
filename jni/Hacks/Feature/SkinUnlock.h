@@ -39,6 +39,7 @@ static constexpr uintptr_t kSkinRvaWeaponName     = 0x85D6744;
 static constexpr uintptr_t kSkinRvaRoleConf       = 0xBAE6244;
 static constexpr uintptr_t kSkinRvaRoleName       = 0xBAE8444;
 static constexpr uintptr_t kSkinRvaCharModel      = 0xA30A6B8;
+static constexpr uintptr_t kSkinRvaRoleSkin       = 0xBAEE040;
 
 struct SkinRow {
     std::string name;
@@ -73,7 +74,7 @@ struct SkinRow {
 
 static std::vector<void*> gSkinInv, gSkinExtra, gSkinFire, gSkinConf, gSkinAsset;
 static std::vector<void*> gSkinArmor, gSkinSight, gSkinKill, gSkinRes;
-static std::vector<void*> gSkinRole, gSkinModel;
+static std::vector<void*> gSkinRole, gSkinModel, gSkinRoleSkin;
 static pthread_mutex_t gSkinMu = PTHREAD_MUTEX_INITIALIZER;
 static std::vector<SkinRow> gSkinRows;
 static std::atomic<int> gSkinState{0};
@@ -211,6 +212,7 @@ static void SkinInstallHooks() {
     SkinHookOne(8, kSkinRvaItemResource, &gSkinRes, (void*)SkinCtorHook<8>);
     SkinHookOne(9, kSkinRvaRoleConf, &gSkinRole, (void*)SkinCtorHook<9>);
     SkinHookOne(10, kSkinRvaCharModel, &gSkinModel, (void*)SkinCtorHook<10>);
+    SkinHookOne(11, kSkinRvaRoleSkin, &gSkinRoleSkin, (void*)SkinCtorHook<11>);
 }
 
 static const uintptr_t kCharModelOff[12] = {
@@ -237,10 +239,88 @@ static void* SkinByAvatar(const std::vector<void*>& models, uint64_t item) {
     return nullptr;
 }
 
+static const uintptr_t kRoleSkinCopy[] = {
+    0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40, 0x44,
+    0x48, 0x4C, 0x50, 0x54, 0x58, 0x5C, 0x64, 0x68, 0x6C,
+    0x70, 0x74, 0x78, 0x7C, 0x80
+};
+
+static bool SkinOwns(void* skin, uint32_t roleId) {
+    if (!roleId || !SkinRdOk(skin, 0x10)) return false;
+    auto list = *(List<uint32_t>**)((uintptr_t)skin + 0x10);
+    if (!Tools::IsPtrValid(list) || !Tools::IsPtrValid(list->items)) return false;
+    int n = list->size;
+    if (n <= 0 || n > 32 || n > list->items->max_length) return false;
+    for (int i = 0; i < n; ++i)
+        if (list->items->m_Items[i] == roleId) return true;
+    return false;
+}
+
+static bool SkinBoxHas(void* role, uint32_t skinId) {
+    if (!skinId || !SkinRdOk(role, 0xC8)) return false;
+    auto arr = *(Array<int>**)((uintptr_t)role + 0xC8);
+    if (!Tools::IsPtrValid(arr)) return false;
+    int n = arr->max_length;
+    if (n <= 0 || n > 64) return false;
+    for (int i = 0; i < n; ++i)
+        if ((uint32_t)arr->m_Items[i] == skinId) return true;
+    return false;
+}
+
+static bool SkinBelongs(void* skin, void* role, uint32_t roleId) {
+    if (SkinOwns(skin, roleId)) return true;
+    uint32_t sid = (uint32_t)SkinRdI(skin, 0x60);
+    return role && sid && SkinBoxHas(role, sid);
+}
+
+static int SkinFilled(void* skin) {
+    int n = 0;
+    for (uintptr_t off : kRoleSkinCopy)
+        if (SkinRdI(skin, off)) ++n;
+    return n;
+}
+
+static void SkinCopyOneSkin(void* dst, void* src) {
+    if (!dst || !src || dst == src) return;
+    SkinWrB(dst, 0x19, SkinRdB(src, 0x19));
+    for (uintptr_t off : kRoleSkinCopy)
+        SkinWrI(dst, off, SkinRdI(src, off));
+}
+
+static void SkinCopyRoleSkins(uint32_t dstId, uint32_t skinId, void* dstRole, void* srcRole,
+                              const std::vector<void*>& skins) {
+    void* srcBest = nullptr;
+    int srcBestN = -1;
+    void* srcOf[8] = {};
+    int srcN[8] = {};
+    for (void* s : skins) {
+        if (!SkinBelongs(s, srcRole, skinId)) continue;
+        int kind = SkinRdB(s, 0x18);
+        int filled = SkinFilled(s);
+        if (filled > srcBestN) {
+            srcBest = s;
+            srcBestN = filled;
+        }
+        if (kind >= 0 && kind < 8 && filled >= srcN[kind]) {
+            srcOf[kind] = s;
+            srcN[kind] = filled;
+        }
+    }
+    if (!srcBest) return;
+    for (void* d : skins) {
+        if (!SkinBelongs(d, dstRole, dstId)) continue;
+        int kind = SkinRdB(d, 0x18);
+        void* src = (kind >= 0 && kind < 8) ? srcOf[kind] : nullptr;
+        if (!src) src = srcBest;
+        SkinCopyOneSkin(d, src);
+    }
+}
+
 static void SkinPaintRole(uint32_t dstId, uint64_t skinAvatar, const SkinRow& row,
                           const std::vector<void*>& roles,
                           const std::vector<void*>& models,
-                          const std::vector<void*>& res) {
+                          const std::vector<void*>& res,
+                          const std::vector<void*>& roleSkins) {
     if (!dstId) return;
     uint32_t skinId = (uint32_t)row.skinId;
     void* srcRole = SkinByRole(roles, skinId, 0x34);
@@ -271,16 +351,24 @@ static void SkinPaintRole(uint32_t dstId, uint64_t skinAvatar, const SkinRow& ro
 
     void* srcMesh = SkinByAvatar(models, srcAvatar);
     void* dstMesh = SkinByAvatar(models, dstAvatar);
-    if (!srcMesh || !dstMesh || srcMesh == dstMesh) return;
-    SkinWrB(dstMesh, 0x10, SkinRdB(srcMesh, 0x10));
-    SkinWrB(dstMesh, 0x11, SkinRdB(srcMesh, 0x11));
-    SkinWrI(dstMesh, 0x14, SkinRdI(srcMesh, 0x14));
-    for (uintptr_t off : kCharCopyOff)
-        SkinWrI(dstMesh, off, SkinRdI(srcMesh, off));
-    if (SkinRdOk(srcMesh, 0x70) && SkinRdOk(dstMesh, 0x70) &&
-        SkinRdOk(srcMesh, 0x74) && SkinRdOk(dstMesh, 0x74)) {
-        *(void**)((uintptr_t)dstMesh + 0x70) = *(void**)((uintptr_t)srcMesh + 0x70);
+    if (srcMesh && dstMesh && srcMesh != dstMesh) {
+        SkinWrB(dstMesh, 0x10, SkinRdB(srcMesh, 0x10));
+        SkinWrB(dstMesh, 0x11, SkinRdB(srcMesh, 0x11));
+        SkinWrI(dstMesh, 0x14, SkinRdI(srcMesh, 0x14));
+        for (uintptr_t off : kCharCopyOff)
+            SkinWrI(dstMesh, off, SkinRdI(srcMesh, off));
+        if (SkinRdOk(srcMesh, 0x58) && SkinRdOk(srcMesh, 0x5C) &&
+            SkinRdOk(dstMesh, 0x58) && SkinRdOk(dstMesh, 0x5C))
+            *(void**)((uintptr_t)dstMesh + 0x58) = *(void**)((uintptr_t)srcMesh + 0x58);
+        if (SkinRdOk(srcMesh, 0x68) && SkinRdOk(srcMesh, 0x6C) &&
+            SkinRdOk(dstMesh, 0x68) && SkinRdOk(dstMesh, 0x6C))
+            *(void**)((uintptr_t)dstMesh + 0x68) = *(void**)((uintptr_t)srcMesh + 0x68);
+        if (SkinRdOk(srcMesh, 0x70) && SkinRdOk(dstMesh, 0x70) &&
+            SkinRdOk(srcMesh, 0x74) && SkinRdOk(dstMesh, 0x74))
+            *(void**)((uintptr_t)dstMesh + 0x70) = *(void**)((uintptr_t)srcMesh + 0x70);
+        SkinWrU64(dstMesh, 0x80, SkinRdU64(srcMesh, 0x80));
     }
+    SkinCopyRoleSkins(dstId, skinId, dstRole, srcRole, roleSkins);
 }
 
 static void SkinApplyChar(uint32_t dstRole, const SkinRow& row) {
@@ -291,6 +379,7 @@ static void SkinApplyChar(uint32_t dstRole, const SkinRow& row) {
     std::vector<void*> roles = gSkinRole;
     std::vector<void*> models = gSkinModel;
     std::vector<void*> res = gSkinRes;
+    std::vector<void*> roleSkins = gSkinRoleSkin;
     pthread_mutex_unlock(&gSkinMu);
 
     uint64_t skinAvatar = row.avatar;
@@ -301,7 +390,7 @@ static void SkinApplyChar(uint32_t dstRole, const SkinRow& row) {
             break;
         }
     }
-    SkinPaintRole(dstRole, skinAvatar, row, roles, models, res);
+    SkinPaintRole(dstRole, skinAvatar, row, roles, models, res, roleSkins);
 }
 
 static void SkinApplyRow(const SkinRow& row) {
@@ -693,7 +782,7 @@ static void DrawSkinKeyboard() {
 }
 
 static void SkinLabel(const SkinRow& row, char* out, int n) {
-    snprintf(out, n, "%d  %s", row.skinId, row.name.c_str());
+    snprintf(out, n, "%s", row.name.c_str());
 }
 
 static bool SkinMatch(const SkinRow& row, const std::string& q) {
