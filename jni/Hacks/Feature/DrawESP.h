@@ -29,29 +29,49 @@ static std::string WeaponItemName(int itemId) {
     return name;
 }
 
+static Vector3 DroppedWeaponPos(uintptr_t data) {
+    Vector3 pos = *(Vector3*)(data + 0x4C);
+    if (!Class_DropData_GetRealPosition) return pos;
+    auto fn = (Vector3 (*)(uintptr_t))Class_DropData_GetRealPosition;
+    return fn(data);
+}
+
 static void DrawDroppedWeapons(ImDrawList* draw, Camera* camera, const Vector3& myPos) {
     if (!checkboxStates["ESP ENABLE"] || !checkboxStates["ESP::WEAPON"]) return;
     MatchGame* match = GamePlay::get_MatchGame();
     if (!Tools::IsPtrValid(match)) return;
-    List<DroppedPickUp*>* drops = match->DroppedPickUps();
-    if (!Tools::IsPtrValid(drops)) return;
-    int count = drops->getSize();
-    if (count <= 0 || count > 256) return;
-    DroppedPickUp** items = drops->getItems();
-    if (!Tools::IsPtrValid(items)) return;
+    uintptr_t manager = *(uintptr_t*)((uintptr_t)match + 0x320);
+    if (!Tools::IsPtrValid((void*)manager) && Class_DropMgr_get_Instance) {
+        auto instance = (uintptr_t (*)())Class_DropMgr_get_Instance;
+        manager = instance();
+    }
+    if (!Tools::IsPtrValid((void*)manager)) return;
+    uintptr_t dict = *(uintptr_t*)(manager + 0xB8);
+    if (!Tools::IsPtrValid((void*)dict)) return;
+    uintptr_t entries = *(uintptr_t*)(dict + 0x18);
+    int count = *(int*)(dict + 0x20);
+    if (!Tools::IsPtrValid((void*)entries) || count <= 0 || count > 12000) return;
+    int length = *(int*)(entries + 0x18);
+    if (length <= 0 || count > length) return;
+    uintptr_t slot = entries + 0x20;
     int drawn = 0;
-    for (int i = 0; i < count && drawn < 48; ++i) {
-        DroppedPickUp* drop = items[i];
-        if (!Tools::IsPtrValid(drop) || drop->HasDespawned() || drop->PickUpType() != 1) continue;
-        Transform* model = drop->Model();
-        if (!Tools::IsPtrValid(model)) continue;
-        Vector3 root = model->get_position();
+    for (int i = 0; i < count && drawn < 40; ++i, slot += 24) {
+        int hash = *(int*)slot;
+        if (hash < 0) continue;
+        uintptr_t data = *(uintptr_t*)(slot + 16);
+        if (!Tools::IsPtrValid((void*)data)) continue;
+        if (*(unsigned char*)(data + 0xD1) != 0) continue;
+        if (*(unsigned char*)(data + 0x30) != 0) continue;
+        if (*(int*)(data + 0x10) != 1) continue;
+        int itemId = *(int*)(data + 0x1C);
+        Vector3 root = DroppedWeaponPos(data);
+        if (root.x == 0.0f && root.y == 0.0f && root.z == 0.0f) continue;
         Vector3 screen = camera->WorldToScreenPoint(root);
         if (screen.z <= 0.0f) continue;
         float distance = Vector3::Distance(myPos, root);
-        if (distance > 250.0f) continue;
+        if (distance > 350.0f) continue;
         char line[80];
-        snprintf(line, sizeof(line), "%s %dm", WeaponItemName(drop->ItemId()).c_str(), (int)distance);
+        snprintf(line, sizeof(line), "%s %dm", WeaponItemName(itemId).c_str(), (int)distance);
         ImVec2 textSize = ImGui::CalcTextSize(line);
         AddTextWithShadow(draw, nullptr, 14.0f, ImVec2(screen.x - textSize.x * 0.5f, glHeight - screen.y - textSize.y), IM_COL32(230, 200, 120, 230), line);
         drawn++;

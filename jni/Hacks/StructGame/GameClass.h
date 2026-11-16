@@ -48,6 +48,8 @@ uintptr_t Class_AttackableTarget__m_Health;
 uintptr_t Class_AttackableTarget__m_MaxHealth;
 uintptr_t Class_BaseGame__m_AllVehicles;
 uintptr_t Class_ItemConfig_GetItemName;
+uintptr_t Class_DropData_GetRealPosition;
+uintptr_t Class_DropMgr_get_Instance;
 uintptr_t Class_Pawn_m_IsBot;
 uintptr_t Class_Pawn_m_IsAlive;
 uintptr_t Class_Pawn_m_Mesh;
