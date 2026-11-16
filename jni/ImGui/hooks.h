@@ -1194,6 +1194,13 @@ static LowGfxGetSysLevelFn gLowGfxGetSysLevel = nullptr;
 
 static bool LowGfxResolveSystemSetting() {
     if (gLowGfxSysInst) return true;
+    if (!Il2CppPointersReady()) return false;
+    static bool attached = false;
+    if (!attached) {
+        Il2CppAttach(DOS("libunity.so"));
+        attached = true;
+    }
+    if (!Il2CppIsAssembliesLoaded()) return false;
     static const char* images[] = {"Assembly-CSharp", "Assembly-CSharp.dll"};
     for (const char* image : images) {
         void* getInst = Il2CppGetMethodOffset(image, "GameEngine", "SystemSetting", "get_Instance", 0);
@@ -1336,16 +1343,28 @@ static void ApplyLowGfx() {
     if (tex < 0) tex = 0;
     if (tex > 2) tex = 2;
     gLowGfxFns.setTex(tex);
+    static int gLowGfxAppliedQual = -2;
+    if (!checkboxStates["LOWGFX"]) gLowGfxAppliedQual = -2;
     if (gLowGfxFns.setQual) {
-        if (t >= 0.25f) gLowGfxFns.setQual(0, true);
-        else gLowGfxFns.setQual(gLowGfx.unityQual, false);
-    }
-    if (LowGfxResolveSystemSetting() && t >= 0.34f) {
-        void* sys = gLowGfxSysInst();
-        if (sys && gLowGfxSetSysLevel) {
-            int lvl = t >= 0.67f ? 1 : 2; // UserSettingLevel VeryLow / Low in 1.6.59 dump
-            gLowGfxSetSysLevel(sys, lvl, false);
+        int want = t >= 0.25f ? 0 : gLowGfx.unityQual;
+        if (want != gLowGfxAppliedQual) {
+            gLowGfxFns.setQual(want, want == 0);
+            gLowGfxAppliedQual = want;
         }
+    }
+    static int gLowGfxAppliedSys = -1;
+    if (!checkboxStates["LOWGFX"]) gLowGfxAppliedSys = -1;
+    if (LowGfxResolveSystemSetting() && t >= 0.34f) {
+        int lvl = t >= 0.67f ? 1 : 2;
+        if (lvl != gLowGfxAppliedSys) {
+            void* sys = gLowGfxSysInst();
+            if (sys && gLowGfxSetSysLevel) {
+                gLowGfxSetSysLevel(sys, lvl, false);
+                gLowGfxAppliedSys = lvl;
+            }
+        }
+    } else if (gLowGfxAppliedSys != -1) {
+        gLowGfxAppliedSys = -1;
     }
     gLowGfxFns.setAniso(t >= 0.34f ? 0 : gLowGfx.aniso);
     bool flat = t >= 0.34f;

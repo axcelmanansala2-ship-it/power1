@@ -250,6 +250,7 @@ void Il2CppSetStaticFieldValue(const char *image, const char *namespaze, const c
 }
 // ================================================================================================================ //
 void *Il2CppGetMethodOffset(const char *image, const char *namespaze, const char *clazz, const char *name, int argsCount) {
+    if (!Il2CppPointersReady()) return nullptr;
     void *img = Il2CppGetImageByName(image);
     if(!img) {
         IL2CPP_LOGE("Can't find image %s!", image);
@@ -342,10 +343,16 @@ size_t Il2CppGetFieldOffset(const char *image, const char *namespaze, const char
     return result;
 }
 // ================================================================================================================ //
-bool Il2CppIsAssembliesLoaded() {
-    size_t size;
-    void **assemblies = il2cpp_domain_get_assemblies(il2cpp_domain_get(), &size);
+bool Il2CppPointersReady() {
+    return il2cpp_domain_get != nullptr && il2cpp_domain_get_assemblies != nullptr;
+}
 
-    return size != 0 && assemblies != 0;
+bool Il2CppIsAssembliesLoaded() {
+    if (!Il2CppPointersReady()) return false;
+    size_t size = 0;
+    void* domain = il2cpp_domain_get();
+    if (!domain) return false;
+    void **assemblies = il2cpp_domain_get_assemblies(domain, &size);
+    return size != 0 && assemblies != nullptr;
 }
 // ================================================================================================================ //

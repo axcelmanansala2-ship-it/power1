@@ -277,6 +277,7 @@ void *Il2CppGetMethodOffset(const char *image, const char *namespaze, const char
 
 size_t Il2CppGetFieldOffset(const char *image, const char *namespaze, const char *clazz, const char *name);
 
+bool Il2CppPointersReady();
 bool Il2CppIsAssembliesLoaded();
 #endif
 

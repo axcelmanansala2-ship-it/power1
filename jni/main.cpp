@@ -36,7 +36,6 @@
 #include "ImGui/LOGONIDOS.h"
 #include "Hacks/Hacks.h"
 #include "Hacks/Feature/WeaponCategoryConfig.h"
-#include "ANOGS/Call_IL2Cpp.h"
 
 
 static CustomWidgets g_widgets;
@@ -103,7 +102,6 @@ EGLBoolean (*orig_eglSwapBuffers)(...);
 EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
 eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
 eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
-ApplyLowGfx();
 if (!g_Initialized) {
     ImGui::CreateContext();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -610,6 +608,7 @@ ImGui::PopStyleColor(2);
 ImGui::PopStyleVar(3);
 }
 
+if (g_Initialized) ApplyLowGfx();
 ImGui::Render();
 ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 if (clearMousePos && !io->MouseDown[0]) {
@@ -628,7 +627,6 @@ void Init_Thread(){
     }
     
     INIT_OFFSETS();
-    Il2CppAttach(DOS("libunity.so"));
     hooking();
     
     DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
