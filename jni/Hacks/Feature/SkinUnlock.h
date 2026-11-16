@@ -374,6 +374,79 @@ static void SkinTick() {
     }
 }
 
+static void SkinKeyAppend(const char* s) {
+    if (!s || !s[0]) return;
+    size_t n = strlen(gSkinSearch);
+    size_t add = strlen(s);
+    if (n + add >= sizeof(gSkinSearch)) return;
+    memcpy(gSkinSearch + n, s, add + 1);
+}
+
+static void SkinKeyBack() {
+    size_t n = strlen(gSkinSearch);
+    if (n >= 3 && gSkinSearch[n - 1] == ']' && gSkinSearch[n - 3] == '[') {
+        gSkinSearch[n - 3] = 0;
+        return;
+    }
+    if (n) gSkinSearch[n - 1] = 0;
+}
+
+static void DrawSkinKeyboard() {
+    static bool upper = false;
+    const float gap = 4.f;
+    const float keyH = 34.f;
+    float width = ImGui::GetContentRegionAvail().x;
+    float keyW = (width - gap * 9.f) / 10.f;
+    if (keyW < 16.f) keyW = 16.f;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(gap, gap));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f);
+
+    const char* rows[4] = {
+        "1234567890",
+        upper ? "QWERTYUIOP" : "qwertyuiop",
+        upper ? "ASDFGHJKL" : "asdfghjkl",
+        upper ? "ZXCVBNM" : "zxcvbnm"
+    };
+    for (int r = 0; r < 4; ++r) {
+        int count = (int)strlen(rows[r]);
+        float rowW = count * keyW + (count - 1) * gap;
+        float indent = (width - rowW) * 0.5f;
+        if (indent > 0.f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+        for (int i = 0; i < count; ++i) {
+            char lab[8];
+            lab[0] = rows[r][i];
+            lab[1] = 0;
+            char id[16];
+            snprintf(id, sizeof(id), "%s##k%d%d", lab, r, i);
+            if (ImGui::Button(id, ImVec2(keyW, keyH)))
+                SkinKeyAppend(lab);
+            if (i + 1 < count) ImGui::SameLine(0.f, gap);
+        }
+    }
+
+    const char* tags[] = { "[M]", "[L]", "[E]", "[C]" };
+    float tagW = (width - gap * 3.f) / 4.f;
+    for (int i = 0; i < 4; ++i) {
+        char id[16];
+        snprintf(id, sizeof(id), "%s##tag", tags[i]);
+        if (ImGui::Button(id, ImVec2(tagW, keyH)))
+            SkinKeyAppend(tags[i]);
+        if (i + 1 < 4) ImGui::SameLine(0.f, gap);
+    }
+
+    float actW = (width - gap * 3.f) / 4.f;
+    if (ImGui::Button("Space##sk", ImVec2(actW, keyH))) SkinKeyAppend(" ");
+    ImGui::SameLine(0.f, gap);
+    if (ImGui::Button("<<##sk", ImVec2(actW, keyH))) SkinKeyBack();
+    ImGui::SameLine(0.f, gap);
+    if (ImGui::Button(upper ? "Aa##sk" : "aa##sk", ImVec2(actW, keyH))) upper = !upper;
+    ImGui::SameLine(0.f, gap);
+    if (ImGui::Button("Clear##sk", ImVec2(actW, keyH))) gSkinSearch[0] = 0;
+
+    ImGui::PopStyleVar(2);
+}
+
 static void DrawSkinTab() {
     ImGui::Text(ICON_FA_TSHIRT "  Skin");
     ImGui::Separator();
@@ -394,8 +467,15 @@ static void DrawSkinTab() {
     if (st != 2 || gSkinRows.empty()) return;
 
     ImGui::Spacing();
-    ImGui::InputText("Search##skin", gSkinSearch, sizeof(gSkinSearch));
-    ImGui::BeginChild("##skinlist", ImVec2(0, 0), true);
+    ImGui::BeginGroupPanel("Search", ImVec2(-1, 0));
+    if (gSkinSearch[0]) ImGui::TextUnformatted(gSkinSearch);
+    else ImGui::TextUnformatted("...");
+    ImGui::EndGroupPanel();
+
+    const float kbH = 34.f * 6.f + 36.f;
+    float listH = ImGui::GetContentRegionAvail().y - kbH;
+    if (listH < 90.f) listH = 90.f;
+    ImGui::BeginChild("##skinlist", ImVec2(0, listH), true);
     std::string q = SkinLower(gSkinSearch);
     int shown = 0;
     const int cap = q.empty() ? 40 : 80;
@@ -414,4 +494,6 @@ static void DrawSkinTab() {
     }
     if (shown == 0) ImGui::TextUnformatted("No match.");
     ImGui::EndChild();
+    ImGui::Spacing();
+    DrawSkinKeyboard();
 }
