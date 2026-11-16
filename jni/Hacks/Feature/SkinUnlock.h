@@ -91,9 +91,11 @@ static SkinHookSlot gSkinSlots[12];
 template <int N>
 static void SkinCtorHook(void* self) {
     if (self && gSkinSlots[N].vec && gSkinSlots[N].vec->size() < 50000) {
-        pthread_mutex_lock(&gSkinMu);
-        gSkinSlots[N].vec->push_back(self);
-        pthread_mutex_unlock(&gSkinMu);
+        if (pthread_mutex_trylock(&gSkinMu) == 0) {
+            if (gSkinSlots[N].vec->size() < 50000)
+                gSkinSlots[N].vec->push_back(self);
+            pthread_mutex_unlock(&gSkinMu);
+        }
     }
     if (gSkinSlots[N].orig) gSkinSlots[N].orig(self);
 }
@@ -211,7 +213,6 @@ static void SkinInstallHooks() {
     SkinHookOne(8, kSkinRvaItemResource, &gSkinRes, (void*)SkinCtorHook<8>);
     SkinHookOne(9, kSkinRvaRoleConf, &gSkinRole, (void*)SkinCtorHook<9>);
     SkinHookOne(10, kSkinRvaCharModel, &gSkinModel, (void*)SkinCtorHook<10>);
-    SkinHookOne(11, kSkinRvaRoleBase, &gSkinBase, (void*)SkinCtorHook<11>);
 }
 
 static const uintptr_t kCharModelOff[12] = {

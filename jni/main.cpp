@@ -656,7 +656,7 @@ void Init_Thread(){
     INIT_OFFSETS();
     hooking();
     SkinInstallHooks();
-    
+
     DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     started = true;
 }
