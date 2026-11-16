@@ -35,6 +35,9 @@ static constexpr uintptr_t kSkinRvaWeaponName     = 0x85D6744;
 
 struct SkinRow {
     std::string name;
+    std::string low;
+    void* conf = nullptr;
+    bool named = false;
     int baseId = 0;
     int color = 0;
     int skinId = 0;
@@ -58,6 +61,7 @@ static std::vector<void*> gSkinArmor, gSkinSight, gSkinKill, gSkinRes;
 static pthread_mutex_t gSkinMu = PTHREAD_MUTEX_INITIALIZER;
 static std::vector<SkinRow> gSkinRows;
 static std::atomic<int> gSkinState{0};
+static int gSkinNameCursor = 0;
 static char gSkinSearch[64] = "";
 
 struct SkinHookSlot {
@@ -121,10 +125,28 @@ static std::string SkinConfName(void* obj) {
     return std::string(u);
 }
 
+static std::string SkinTake(const char* s, int cap) {
+    std::string o;
+    if (!s || cap <= 0) return o;
+    for (int i = 0; i < cap && s[i]; ++i) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < 32 || c == '#' || c == '%') continue;
+        o.push_back((char)c);
+    }
+    return o;
+}
+
 static std::string SkinLower(const std::string& in) {
-    std::string o = in;
+    std::string o = SkinTake(in.c_str(), 48);
     for (char& c : o) c = (char)std::tolower((unsigned char)c);
     return o;
+}
+
+static const char* SkinTag(int color) {
+    if (color == 5) return "[M] ";
+    if (color == 4) return "[L] ";
+    if (color == 3) return "[E] ";
+    return "[C] ";
 }
 
 static void SkinHookOne(int slot, uintptr_t rva, std::vector<void*>* vec, void* fn) {
@@ -273,8 +295,6 @@ static void SkinScanMain() {
 
     std::vector<SkinRow> rows;
     rows.reserve(conf.size());
-    std::unordered_map<std::string, int> seen;
-    seen.reserve(conf.size());
 
     for (void* c : conf) {
         int baseId = SkinRdI(c, 0x34);
@@ -287,18 +307,14 @@ static void SkinScanMain() {
         int icon = SkinRdI(item, 0x28);
         int color = SkinRdB(c, 0x22);
 
-        std::string raw = SkinConfName(c);
-        if (raw.empty()) raw = "id " + std::to_string(confId);
-        const char* tag = "[C] ";
-        if (color == 5) tag = "[M] ";
-        else if (color == 4) tag = "[L] ";
-        else if (color == 3) tag = "[E] ";
-        std::string name = std::string(tag) + raw;
-        int n = seen[name]++;
-        if (n > 0) name += " +" + std::to_string(n);
+        char stub[32];
+        snprintf(stub, sizeof(stub), "%sid %d", SkinTag(color), confId);
 
         SkinRow row;
-        row.name = name;
+        row.name = stub;
+        row.low = SkinLower(row.name);
+        row.conf = c;
+        row.named = false;
         row.baseId = baseId;
         row.color = color;
         row.skinId = confId;
@@ -356,8 +372,29 @@ static void SkinScanMain() {
         rows.push_back(std::move(row));
     }
 
+    gSkinNameCursor = 0;
     gSkinRows = std::move(rows);
     gSkinState.store(2, std::memory_order_release);
+}
+
+static void SkinFillNames() {
+    if (gSkinState.load(std::memory_order_acquire) != 2) return;
+    int n = (int)gSkinRows.size();
+    int budget = 12;
+    while (budget > 0 && gSkinNameCursor < n) {
+        SkinRow& row = gSkinRows[gSkinNameCursor++];
+        std::string raw = SkinTake(SkinConfName(row.conf).c_str(), 40);
+        if (raw.empty()) {
+            row.named = true;
+            --budget;
+            continue;
+        }
+        row.name = std::string(SkinTag(row.color)) + raw;
+        row.low = SkinLower(row.name);
+        row.named = true;
+        row.conf = nullptr;
+        --budget;
+    }
 }
 
 static void SkinTick() {
@@ -391,13 +428,23 @@ static void SkinKeyBack() {
     if (n) gSkinSearch[n - 1] = 0;
 }
 
+static bool SkinKeyBtn(const char* vis, int uid, float w, float h) {
+    if (w < 8.f) w = 8.f;
+    if (h < 8.f) h = 8.f;
+    ImGui::PushID(uid);
+    bool hit = ImGui::Button(vis, ImVec2(w, h));
+    ImGui::PopID();
+    return hit;
+}
+
 static void DrawSkinKeyboard() {
     static bool upper = false;
     const float gap = 4.f;
     const float keyH = 34.f;
     float width = ImGui::GetContentRegionAvail().x;
+    if (width < 120.f) width = 120.f;
     float keyW = (width - gap * 9.f) / 10.f;
-    if (keyW < 16.f) keyW = 16.f;
+    if (keyW < 18.f) keyW = 18.f;
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(gap, gap));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f);
@@ -408,18 +455,16 @@ static void DrawSkinKeyboard() {
         upper ? "ASDFGHJKL" : "asdfghjkl",
         upper ? "ZXCVBNM" : "zxcvbnm"
     };
+    int uid = 1;
     for (int r = 0; r < 4; ++r) {
         int count = (int)strlen(rows[r]);
         float rowW = count * keyW + (count - 1) * gap;
         float indent = (width - rowW) * 0.5f;
-        if (indent > 0.f) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
+        if (indent > 1.f && indent < width)
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + indent);
         for (int i = 0; i < count; ++i) {
-            char lab[8];
-            lab[0] = rows[r][i];
-            lab[1] = 0;
-            char id[16];
-            snprintf(id, sizeof(id), "%s##k%d%d", lab, r, i);
-            if (ImGui::Button(id, ImVec2(keyW, keyH)))
+            char lab[2] = { rows[r][i], 0 };
+            if (SkinKeyBtn(lab, uid++, keyW, keyH))
                 SkinKeyAppend(lab);
             if (i + 1 < count) ImGui::SameLine(0.f, gap);
         }
@@ -427,22 +472,22 @@ static void DrawSkinKeyboard() {
 
     const char* tags[] = { "[M]", "[L]", "[E]", "[C]" };
     float tagW = (width - gap * 3.f) / 4.f;
+    if (tagW < 8.f) tagW = 8.f;
     for (int i = 0; i < 4; ++i) {
-        char id[16];
-        snprintf(id, sizeof(id), "%s##tag", tags[i]);
-        if (ImGui::Button(id, ImVec2(tagW, keyH)))
+        if (SkinKeyBtn(tags[i], uid++, tagW, keyH))
             SkinKeyAppend(tags[i]);
         if (i + 1 < 4) ImGui::SameLine(0.f, gap);
     }
 
     float actW = (width - gap * 3.f) / 4.f;
-    if (ImGui::Button("Space##sk", ImVec2(actW, keyH))) SkinKeyAppend(" ");
+    if (actW < 8.f) actW = 8.f;
+    if (SkinKeyBtn("Space", uid++, actW, keyH)) SkinKeyAppend(" ");
     ImGui::SameLine(0.f, gap);
-    if (ImGui::Button("<<##sk", ImVec2(actW, keyH))) SkinKeyBack();
+    if (SkinKeyBtn("<<", uid++, actW, keyH)) SkinKeyBack();
     ImGui::SameLine(0.f, gap);
-    if (ImGui::Button(upper ? "Aa##sk" : "aa##sk", ImVec2(actW, keyH))) upper = !upper;
+    if (SkinKeyBtn(upper ? "Aa" : "aa", uid++, actW, keyH)) upper = !upper;
     ImGui::SameLine(0.f, gap);
-    if (ImGui::Button("Clear##sk", ImVec2(actW, keyH))) gSkinSearch[0] = 0;
+    if (SkinKeyBtn("Clear", uid++, actW, keyH)) gSkinSearch[0] = 0;
 
     ImGui::PopStyleVar(2);
 }
@@ -465,6 +510,7 @@ static void DrawSkinTab() {
     ImGui::EndGroupPanel();
 
     if (st != 2 || gSkinRows.empty()) return;
+    SkinFillNames();
 
     ImGui::Spacing();
     ImGui::BeginGroupPanel("Search", ImVec2(-1, 0));
@@ -478,19 +524,21 @@ static void DrawSkinTab() {
     ImGui::BeginChild("##skinlist", ImVec2(0, listH), true);
     std::string q = SkinLower(gSkinSearch);
     int shown = 0;
-    const int cap = q.empty() ? 40 : 80;
+    const int cap = q.empty() ? 30 : 40;
     for (size_t i = 0; i < gSkinRows.size(); ++i) {
-        if (!q.empty() && SkinLower(gSkinRows[i].name).find(q) == std::string::npos)
+        const SkinRow& row = gSkinRows[i];
+        if (!q.empty() && row.low.find(q) == std::string::npos)
             continue;
         if (shown >= cap) {
             ImGui::TextUnformatted(q.empty() ? "Search to see more." : "Keep typing to narrow.");
             break;
         }
         ++shown;
-        std::string lab = gSkinRows[i].name + "##sk" + std::to_string(i);
+        ImGui::PushID((int)i + 1);
         bool on = false;
-        if (g_widgets.checkbox(lab.c_str(), &on) && on)
-            SkinApplyRow(gSkinRows[i]);
+        if (g_widgets.checkbox(row.name.c_str(), &on) && on)
+            SkinApplyRow(row);
+        ImGui::PopID();
     }
     if (shown == 0) ImGui::TextUnformatted("No match.");
     ImGui::EndChild();
