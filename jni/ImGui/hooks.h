@@ -1240,12 +1240,25 @@ static bool LowGfxResolveSystemSetting() {
     return false;
 }
 
+static void InstallFpsHooks() {
+    static bool hooked = false;
+    if (hooked || !libunity_base) return;
+    DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
+    DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
+    DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCBC")), (void*)hook_get_targetFrameRate, (void**)&orig_get_targetFrameRate);
+    DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCCC")), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
+    DOSHOOK((void*)(libunity_base + GET_OFF("0x5329638")), (void*)hook_get_vSyncCount, (void**)&orig_get_vSyncCount);
+    hooked = true;
+}
+
 static void ApplyFpsBoost() {
     static bool applied = false;
     static int savedLevel = 2;
     static bool savedMsaa[3] = {true, true, true};
     bool on = checkboxStates["FRAME120"];
+    if (!on && !applied) return;
     if (!libunity_base) return;
+    if (on) InstallFpsHooks();
     if (!LowGfxResolveSystemSetting() || !gLowGfxSysInst) return;
     void* sys = gLowGfxSysInst();
     if (!sys) return;
@@ -1617,13 +1630,6 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x534D8E4")), (void*)hooked_get_fixedDe
 
 // Wallhack
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53D2114")), (void*)&h_OnReSpawnPlayer, (void**)&o_OnReSpawnPlayer);
-
-// CODM Dump 1.6.59.cs on libunity.so
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCBC")), (void*)hook_get_targetFrameRate, (void**)&orig_get_targetFrameRate);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCCC")), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
-DOSHOOK((void*)(libunity_base + GET_OFF("0x5329638")), (void*)hook_get_vSyncCount, (void**)&orig_get_vSyncCount);
 
 // Snowboard Speed
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53FE7FC")), (void*)hook_get_m_PhysSkisMaxSpeed, (void**)&orig_get_m_PhysSkisMaxSpeed);
