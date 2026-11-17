@@ -82,15 +82,7 @@ static void hooked_SetUltraFrameRateDeviceInfo(void *thiz, bool enableUltraFrame
         orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
         return;
     }
-    if (checkboxStates["FRAME120"]) {
-        orig_SetUltraFrameRateDeviceInfo(thiz, true, 240, 165, 100, true);
-        return;
-    }
-    if (checkboxStates["FRAME40"]) {
-        orig_SetUltraFrameRateDeviceInfo(thiz, false, 40, 40, 40, false);
-        return;
-    }
-    orig_SetUltraFrameRateDeviceInfo(thiz, enableUltraFrameRate, ultraFrameRate, ultraFrameRateBR, ultraFrameRateQualityLimit, customizedFrameRate);
+    orig_SetUltraFrameRateDeviceInfo(thiz, true, 240, 165, 100, true);
 }
 
 //fastscope
@@ -966,10 +958,11 @@ static void DrawAnogsTab() {
 extern std::atomic<bool> gMatchLive;
 static int (*orig_GetFrameRateValue)(void* instance, int fl, int mode) = nullptr;
 static int hook_GetFrameRateValue(void* instance, int fl, int mode) {
-    if (!orig_GetFrameRateValue) return 60;
-    if (instance != nullptr && checkboxStates["FRAME120"]) return 120;
-    if (instance != nullptr && checkboxStates["FRAME40"]) return 40;
-    return orig_GetFrameRateValue(instance, fl, mode);
+    if (instance != nullptr) {
+        if (checkboxStates["FRAME120"]) return 120;
+        else if (checkboxStates["FRAME40"]) return 40;
+    }
+    return orig_GetFrameRateValue ? orig_GetFrameRateValue(instance, fl, mode) : 60;
 }
 
 static void (*o_OnReSpawnPlayer)(void *, Vector3) = nullptr;
@@ -1214,38 +1207,6 @@ static bool LowGfxResolveSystemSetting() {
         }
     }
     return false;
-}
-
-static void InstallFpsHooks() {
-    static bool hooked = false;
-    if (hooked || !libunity_base) return;
-    DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
-    DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
-    hooked = true;
-}
-
-static void ApplyFpsBoost() {
-    static bool applied = false;
-    bool on = checkboxStates["FRAME120"];
-    if (!on && !applied) return;
-    if (!libunity_base) return;
-    if (on) InstallFpsHooks();
-    if (!LowGfxResolveSystemSetting() || !gLowGfxSysInst) return;
-    void* sys = gLowGfxSysInst();
-    if (!sys) return;
-
-    auto setRate = (void (*)(void*, int, bool))(libunity_base + 0xAFAD000);
-    if (!on) {
-        if (!applied) return;
-        setRate(sys, 60, true);
-        applied = false;
-        return;
-    }
-    if (applied) return;
-    if (orig_SetUltraFrameRateDeviceInfo)
-        orig_SetUltraFrameRateDeviceInfo(sys, true, 240, 165, 100, true);
-    setRate(sys, 120, true);
-    applied = true;
 }
 
 struct LowGfxFns {
@@ -1614,6 +1575,10 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x534D8E4")), (void*)hooked_get_fixedDe
 
 // Wallhack
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53D2114")), (void*)&h_OnReSpawnPlayer, (void**)&o_OnReSpawnPlayer);
+
+// FPS
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
+DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
 
 // Snowboard Speed
 DOSHOOK((void*)(libunity_base + GET_OFF("0x53FE7FC")), (void*)hook_get_m_PhysSkisMaxSpeed, (void**)&orig_get_m_PhysSkisMaxSpeed);

@@ -637,7 +637,6 @@ ImGui::PopStyleVar(3);
 }
 
 if (g_Initialized) {
-    ApplyFpsBoost();
     ApplyGraphicsLevel();
     ApplyLowGfx();
     SkinTick();
