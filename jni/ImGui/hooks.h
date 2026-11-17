@@ -83,7 +83,7 @@ static void hooked_SetUltraFrameRateDeviceInfo(void *thiz, bool enableUltraFrame
         return;
     }
     if (checkboxStates["FRAME120"]) {
-        orig_SetUltraFrameRateDeviceInfo(thiz, true, 120, 120, 100, true);
+        orig_SetUltraFrameRateDeviceInfo(thiz, true, 240, 165, 100, true);
         return;
     }
     if (checkboxStates["FRAME40"]) {
@@ -330,33 +330,9 @@ static void hook_set_EnableVulkan(void *instance, bool value) {
 //unlock all graphics
 static void (*orig_SetEnableVSync)(void* thiz);
 static void hook_SetEnableVSync(void* thiz) {
-    if (checkboxStates["FRAME120"]) return;
     if (orig_SetEnableVSync) orig_SetEnableVSync(thiz);
 }
 
-static int (*orig_get_targetFrameRate)() = nullptr;
-static int hook_get_targetFrameRate() {
-    if (checkboxStates["FRAME120"]) return 120;
-    if (checkboxStates["FRAME40"]) return 40;
-    return orig_get_targetFrameRate ? orig_get_targetFrameRate() : 60;
-}
-
-static void (*orig_set_targetFrameRate)(int) = nullptr;
-static void hook_set_targetFrameRate(int value) {
-    if (!orig_set_targetFrameRate) return;
-    if (checkboxStates["FRAME120"]) value = 120;
-    else if (checkboxStates["FRAME40"]) value = 40;
-    orig_set_targetFrameRate(value);
-}
-
-static int (*orig_get_vSyncCount)() = nullptr;
-static int hook_get_vSyncCount() {
-    if (checkboxStates["FRAME120"]) return 0;
-    return orig_get_vSyncCount ? orig_get_vSyncCount() : 1;
-}
-
-
-    
 // --- Swimming Speed Scale ---
 static float (*orig_CalcSwimmingSpeedScale)(void *instance) = nullptr;
 static float hook_CalcSwimmingSpeedScale(void *instance) {
@@ -1245,16 +1221,11 @@ static void InstallFpsHooks() {
     if (hooked || !libunity_base) return;
     DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAC73C")), (void*)hook_GetFrameRateValue, (void**)&orig_GetFrameRateValue);
     DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAB394")), (void*)&hooked_SetUltraFrameRateDeviceInfo, (void**)&orig_SetUltraFrameRateDeviceInfo);
-    DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCBC")), (void*)hook_get_targetFrameRate, (void**)&orig_get_targetFrameRate);
-    DOSHOOK((void*)(libunity_base + GET_OFF("0x52CCCCC")), (void*)hook_set_targetFrameRate, (void**)&orig_set_targetFrameRate);
-    DOSHOOK((void*)(libunity_base + GET_OFF("0x5329638")), (void*)hook_get_vSyncCount, (void**)&orig_get_vSyncCount);
     hooked = true;
 }
 
 static void ApplyFpsBoost() {
     static bool applied = false;
-    static int savedLevel = 2;
-    static bool savedMsaa[3] = {true, true, true};
     bool on = checkboxStates["FRAME120"];
     if (!on && !applied) return;
     if (!libunity_base) return;
@@ -1263,36 +1234,17 @@ static void ApplyFpsBoost() {
     void* sys = gLowGfxSysInst();
     if (!sys) return;
 
-    auto getLevel = (int (*)(void*))(libunity_base + 0xAFAADA4);
-    auto setLevel = (void (*)(void*, int))(libunity_base + 0xAFAADAC);
     auto setRate = (void (*)(void*, int, bool))(libunity_base + 0xAFAD000);
-    auto getMsaaBr = (bool (*)(void*))(libunity_base + 0xAFB7490);
-    auto setMsaaBr = (void (*)(void*, bool))(libunity_base + 0xAFB75A0);
-    auto getMsaaMp = (bool (*)(void*))(libunity_base + 0xAFB7840);
-    auto setMsaaMp = (void (*)(void*, bool))(libunity_base + 0xAFB7950);
-    auto getMsaaPve = (bool (*)(void*))(libunity_base + 0xAFB7BF0);
-    auto setMsaaPve = (void (*)(void*, bool))(libunity_base + 0xAFB7D00);
-
     if (!on) {
         if (!applied) return;
-        setLevel(sys, savedLevel);
-        setMsaaBr(sys, savedMsaa[0]);
-        setMsaaMp(sys, savedMsaa[1]);
-        setMsaaPve(sys, savedMsaa[2]);
-        setRate(sys, checkboxStates["FRAME40"] ? 40 : 60, true);
+        setRate(sys, 60, true);
         applied = false;
         return;
     }
     if (applied) return;
-    savedLevel = getLevel(sys);
-    savedMsaa[0] = getMsaaBr(sys);
-    savedMsaa[1] = getMsaaMp(sys);
-    savedMsaa[2] = getMsaaPve(sys);
-    setLevel(sys, 5);
+    if (orig_SetUltraFrameRateDeviceInfo)
+        orig_SetUltraFrameRateDeviceInfo(sys, true, 240, 165, 100, true);
     setRate(sys, 120, true);
-    setMsaaBr(sys, false);
-    setMsaaMp(sys, false);
-    setMsaaPve(sys, false);
     applied = true;
 }
 
