@@ -21,6 +21,7 @@ LOCAL_CPPFLAGS += -Wno-error=c++11-narrowing -fms-extensions -fno-rtti -fno-exce
 # Strip all symbols (no debug info in final binary)
 LOCAL_LDFLAGS += -Wl,--gc-sections,--strip-all,--exclude-libs,ALL -llog -s
 LOCAL_LDFLAGS += -Wl,-z,relro,-z,now
+LOCAL_LDFLAGS += -Wl,-z,max-page-size=16384
 
 LOCAL_ARM_MODE := arm
 

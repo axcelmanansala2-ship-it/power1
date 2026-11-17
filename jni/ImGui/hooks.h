@@ -56,11 +56,8 @@ typedef uint64_t _BYTE;
 typedef uint64_t _QWORD;
 
 auto DOSHOOK = [](void *target, void *replace, void **backup) {
-    if (!target) return;
-    if (DobbyHook(target, replace, backup) == 0) {
-        void *page = (void *)((uintptr_t)(*backup) & ~(getpagesize() - 1));
-        mprotect(page, getpagesize(), PROT_READ | PROT_EXEC); // Hide trampoline
-    }
+    if (!target || !replace || !backup) return;
+    DobbyHook(target, replace, backup);
 };
 
 
@@ -1592,7 +1589,6 @@ DOSHOOK((void*)(libunity_base + GET_OFF("0x5597B14")), (void*)hook_CalcSwimmingS
 
 // Graphics
 DOSHOOK((void*)(libunity_base + GET_OFF("0xAFAD9D4")), (void*)hook_SetEnableVSync, (void**)&orig_SetEnableVSync);
-DOSHOOK((void*)(libunity_base + GET_OFF("0xAFB9F44")), (void*)hook_get_EnableVulkan, (void**)&orig_get_EnableVulkan);
 
 
 // No Parachute

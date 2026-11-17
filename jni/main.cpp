@@ -101,6 +101,9 @@ void DrawAndTouch(ImTextureID textureID, ImVec2& position, float radius, int opa
 EGLBoolean (*orig_eglSwapBuffers)(...);
 
 EGLBoolean _eglSwapBuffers (EGLDisplay dpy, EGLSurface surface) {
+if (!orig_eglSwapBuffers) return EGL_FALSE;
+if (eglGetCurrentContext() == EGL_NO_CONTEXT)
+    return orig_eglSwapBuffers(dpy, surface);
 eglQuerySurface(dpy, surface, EGL_WIDTH, &glWidth);
 eglQuerySurface(dpy, surface, EGL_HEIGHT, &glHeight);
 if (!g_Initialized) {
@@ -653,16 +656,18 @@ return orig_eglSwapBuffers(dpy, surface);
 
 
 void Init_Thread(){
+    usleep(200000);
     while (!m_Il2Cpp) {
-        m_Il2Cpp = getAbsoluteAddress("libunity.so", 0);  
-        sleep(1);      
+        m_Il2Cpp = getAbsoluteAddress("libunity.so", 0);
+        sleep(1);
     }
-    
+
     INIT_OFFSETS();
     hooking();
-    SkinInstallHooks();
 
-    DOSHOOK((void*)dlsym(RTLD_NEXT, DOS("eglSwapBuffers")), (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
+    void* egl = dlsym(RTLD_DEFAULT, DOS("eglSwapBuffers"));
+    if (!egl) egl = dlsym(RTLD_NEXT, DOS("eglSwapBuffers"));
+    if (egl) DOSHOOK(egl, (void*)_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
     started = true;
 }
 
