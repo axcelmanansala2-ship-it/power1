@@ -86,19 +86,24 @@ static std::vector<char> gSkinPicked;
 struct SkinHookSlot {
     void (*orig)(void*);
     std::vector<void*>* vec;
+    uintptr_t target;
+    pthread_mutex_t lock;
+    std::atomic<int> live;
 };
-static SkinHookSlot gSkinSlots[12];
+static SkinHookSlot gSkinSlots[12] = {};
 
 template <int N>
 static void SkinCtorHook(void* self) {
-    if (self && gSkinSlots[N].vec && gSkinSlots[N].vec->size() < 50000) {
-        if (pthread_mutex_trylock(&gSkinMu) == 0) {
-            if (gSkinSlots[N].vec->size() < 50000)
-                gSkinSlots[N].vec->push_back(self);
-            pthread_mutex_unlock(&gSkinMu);
+    SkinHookSlot& s = gSkinSlots[N];
+    void (*orig)(void*) = s.orig;
+    if (s.live.load(std::memory_order_acquire) && self && s.vec) {
+        if (pthread_mutex_trylock(&s.lock) == 0) {
+            if (s.vec->size() < 50000)
+                s.vec->push_back(self);
+            pthread_mutex_unlock(&s.lock);
         }
     }
-    if (gSkinSlots[N].orig) gSkinSlots[N].orig(self);
+    if (orig) orig(self);
 }
 
 static bool SkinRdOk(void* p, uintptr_t off) {
@@ -191,10 +196,41 @@ static const char* SkinTag(int color) {
 }
 
 static void SkinHookOne(int slot, uintptr_t rva, std::vector<void*>* vec, void* fn) {
-    gSkinSlots[slot].vec = vec;
-    gSkinSlots[slot].orig = nullptr;
+    SkinHookSlot& s = gSkinSlots[slot];
+    s.vec = vec;
+    s.orig = nullptr;
+    s.target = 0;
+    pthread_mutex_init(&s.lock, nullptr);
+    s.live.store(0, std::memory_order_release);
     if (!libunity_base || !rva) return;
-    DOSHOOK((void*)(libunity_base + rva), fn, (void**)&gSkinSlots[slot].orig);
+    void* target = (void*)(libunity_base + rva);
+    DOSHOOK(target, fn, (void**)&s.orig);
+    s.target = (uintptr_t)target;
+    s.live.store(1, std::memory_order_release);
+}
+
+// Stop every ctor hook from firing and remove the trampolines so they no
+// longer sit in the path of config construction for the rest of the session.
+static void SkinUninstallHooks() {
+    for (int i = 0; i < 12; ++i) {
+        SkinHookSlot& s = gSkinSlots[i];
+        if (!s.target) continue;
+        s.live.store(0, std::memory_order_release);
+        // Drain any in-flight append before we pull the trampoline.
+        pthread_mutex_lock(&s.lock);
+        pthread_mutex_unlock(&s.lock);
+        DobbyDestroy((void*)s.target);
+        s.target = 0;
+    }
+}
+
+// Snapshot each captured table after appends are stopped, no shared lock.
+static std::vector<void*> SkinSnap(int slot) {
+    SkinHookSlot& s = gSkinSlots[slot];
+    pthread_mutex_lock(&s.lock);
+    std::vector<void*> out = s.vec ? *s.vec : std::vector<void*>();
+    pthread_mutex_unlock(&s.lock);
+    return out;
 }
 
 static void SkinInstallHooks() {
@@ -500,37 +536,47 @@ static void SkinApplyRow(const SkinRow& row) {
     }
 }
 
+static int SkinSlotSize(int slot) {
+    SkinHookSlot& s = gSkinSlots[slot];
+    pthread_mutex_lock(&s.lock);
+    int n = s.vec ? (int)s.vec->size() : 0;
+    pthread_mutex_unlock(&s.lock);
+    return n;
+}
+
 static void SkinScanMain() {
     int last = -1;
     int stable = 0;
+    // The hooks already captured the tables during load, so in the lobby the
+    // sizes are steady and this settles in a few frames.
     for (int i = 0; i < 150; ++i) {
-        pthread_mutex_lock(&gSkinMu);
-        int n = (int)gSkinConf.size();
-        int inv = (int)gSkinInv.size();
-        int roles = (int)gSkinRole.size();
-        pthread_mutex_unlock(&gSkinMu);
+        int n = SkinSlotSize(3);
+        int inv = SkinSlotSize(0);
+        int roles = SkinSlotSize(9);
         if (n > 100 && n == last && inv > 0) {
-            if (++stable >= 5 && (roles > 0 || stable >= 40)) break;
+            if (++stable >= 3 && (roles > 0 || stable >= 12)) break;
         } else {
             stable = 0;
         }
         last = n;
-        usleep(200000);
+        usleep(100000);
     }
 
-    pthread_mutex_lock(&gSkinMu);
-    std::vector<void*> conf = gSkinConf;
-    std::vector<void*> inv = gSkinInv;
-    std::vector<void*> asset = gSkinAsset;
-    std::vector<void*> fire = gSkinFire;
-    std::vector<void*> extra = gSkinExtra;
-    std::vector<void*> armor = gSkinArmor;
-    std::vector<void*> sight = gSkinSight;
-    std::vector<void*> kill = gSkinKill;
-    std::vector<void*> res = gSkinRes;
-    std::vector<void*> roles = gSkinRole;
-    std::vector<void*> models = gSkinModel;
-    pthread_mutex_unlock(&gSkinMu);
+    // Stop the ctor hooks before reading so the loader thread is free of them
+    // and the snapshot has no writer racing it.
+    SkinUninstallHooks();
+
+    std::vector<void*> inv   = SkinSnap(0);
+    std::vector<void*> extra = SkinSnap(1);
+    std::vector<void*> fire  = SkinSnap(2);
+    std::vector<void*> conf  = SkinSnap(3);
+    std::vector<void*> asset = SkinSnap(4);
+    std::vector<void*> armor = SkinSnap(5);
+    std::vector<void*> sight = SkinSnap(6);
+    std::vector<void*> kill  = SkinSnap(7);
+    std::vector<void*> res   = SkinSnap(8);
+    std::vector<void*> roles = SkinSnap(9);
+    std::vector<void*> models = SkinSnap(10);
 
     if (conf.empty() || inv.empty()) {
         gSkinState.store(3, std::memory_order_release);
