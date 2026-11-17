@@ -11,6 +11,7 @@ std::atomic<bool> gMatchLive{false};
 
 void AddTextWithShadow(ImDrawList* draw, ImFont* font, float fontSize, ImVec2 pos, ImU32 textColor, const char* text);
 static void DrawTag(ImDrawList* draw, float centerX, float top, const char* text, ImU32 textCol, ImU32 edge);
+static inline float SnapPx(float v) { return floorf(v + 0.5f); }
 
 static std::string ReadGameString(String* text) {
     if (!Tools::IsPtrValid(text) || text->length <= 0 || text->length > 48) return {};
@@ -38,7 +39,7 @@ static std::string WeaponItemName(uintptr_t weaponConf, int itemId) {
     return name;
 }
 
-static void DrawWeaponMark(ImDrawList* draw, Camera* camera, const Vector3& myPos, uintptr_t entity, int& drawn) {
+static void DrawWeaponMark(ImDrawList* draw, Camera* camera, const Vector3& myPos, uintptr_t entity, int& drawn, float startY) {
     if (drawn >= 40 || !Tools::IsPtrValid((void*)entity)) return;
     if (*(unsigned char*)(entity + 0x6C) == 0) return;
     uintptr_t weaponConf = *(uintptr_t*)(entity + 0xE0);
@@ -53,9 +54,8 @@ static void DrawWeaponMark(ImDrawList* draw, Camera* camera, const Vector3& myPo
     if (distance > 400.0f) return;
     Vector3 screen = camera->WorldToScreenPoint(root);
     if (screen.z <= 0.0f) return;
-    float x = screen.x;
-    float y = glHeight - screen.y;
-    float startY = dropdownStates["#LINE_POS"] == 0 ? (float)glHeight - 3.0f : 20.0f;
+    float x = SnapPx(screen.x);
+    float y = SnapPx(glHeight - screen.y);
     ImVec2 from(glWidth * 0.5f, startY);
     ImVec2 to(x, y);
     draw->AddLine(from, to, IM_COL32(0, 0, 0, 140), 2.4f);
@@ -88,9 +88,10 @@ static void DrawDroppedWeapons(ImDrawList* draw, Camera* camera, const Vector3& 
     if (touched > 2000) touched = 2000;
     uintptr_t slots = values + 0x20;
     int drawn = 0;
+    const float startY = dropdownStates["#LINE_POS"] == 0 ? (float)glHeight - 3.0f : 20.0f;
     for (int i = 0; i < touched && drawn < 40; ++i) {
         uintptr_t entity = *(uintptr_t*)(slots + (uintptr_t)i * 8);
-        DrawWeaponMark(draw, camera, myPos, entity, drawn);
+        DrawWeaponMark(draw, camera, myPos, entity, drawn, startY);
     }
 }
 
@@ -124,8 +125,6 @@ static void DrawCornerBox(ImDrawList* draw, ImVec2 a, ImVec2 b, ImU32 col) {
     arm(ImVec2(a.x, b.y), 1.f, -1.f);
     arm(b, -1.f, -1.f);
 }
-
-static float SnapPx(float v) { return floorf(v + 0.5f); }
 
 struct EspSmooth {
     float hx, hy, rx, ry;
@@ -614,22 +613,22 @@ void drawESP__Player(ImDrawList *draw) {
                     if (maxArmor > 0) {
                         float percent = std::clamp((float)currentArmor / (float)maxArmor, 0.0f, 1.0f);
                         float barW = 4.0f;
-                        float barX = boxA.x - barW - 4.0f;
-                        float fillY = boxA.y + boxH * (1.0f - percent);
-                        draw->AddRectFilled(ImVec2(barX, boxA.y), ImVec2(barX + barW, boxB.y), IM_COL32(12, 14, 18, 200));
-                        draw->AddRectFilled(ImVec2(barX, fillY), ImVec2(barX + barW, boxB.y), IM_COL32(70, 196, 230, 255));
+                        float barX = SnapPx(boxA.x - barW - 4.0f);
+                        float fillY = SnapPx(boxA.y + boxH * (1.0f - percent));
+                        draw->AddRectFilled(ImVec2(barX, boxA.y), ImVec2(barX + barW, boxB.y), IM_COL32(12, 14, 18, 200), 2.0f);
+                        draw->AddRectFilled(ImVec2(barX, fillY), ImVec2(barX + barW, boxB.y), IM_COL32(70, 196, 230, 255), 2.0f);
                     }
                 }
             } else {
                 float percent = std::clamp((float)get_Health / (float)max_Health, 0.0f, 1.0f);
                 float barW = 4.0f;
-                float barX = boxA.x - barW - 4.0f;
-                float fillY = boxA.y + boxH * (1.0f - percent);
+                float barX = SnapPx(boxA.x - barW - 4.0f);
+                float fillY = SnapPx(boxA.y + boxH * (1.0f - percent));
                 ImU32 color = percent > 0.55f ? IM_COL32(72, 214, 120, 245) :
                               percent > 0.25f ? IM_COL32(232, 196, 72, 245) :
                               IM_COL32(232, 78, 78, 245);
-                draw->AddRectFilled(ImVec2(barX, boxA.y), ImVec2(barX + barW, boxB.y), IM_COL32(12, 14, 18, 210));
-                draw->AddRectFilled(ImVec2(barX, fillY), ImVec2(barX + barW, boxB.y), color);
+                draw->AddRectFilled(ImVec2(barX, boxA.y), ImVec2(barX + barW, boxB.y), IM_COL32(12, 14, 18, 210), 2.0f);
+                draw->AddRectFilled(ImVec2(barX, fillY), ImVec2(barX + barW, boxB.y), color, 2.0f);
             }
         }
 
