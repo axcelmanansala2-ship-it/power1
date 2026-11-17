@@ -664,6 +664,7 @@ void Init_Thread(){
 
     INIT_OFFSETS();
     hooking();
+    SkinInstallHooks();
 
     void* egl = dlsym(RTLD_DEFAULT, DOS("eglSwapBuffers"));
     if (!egl) egl = dlsym(RTLD_NEXT, DOS("eglSwapBuffers"));
