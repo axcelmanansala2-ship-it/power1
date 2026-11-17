@@ -1249,6 +1249,7 @@ struct LowGfxFns {
     int (*getShadowCascades)();
     void (*setShadowCascades)(int);
     void (*setGrassShow)(bool);
+    void (*setGrassLOD)(float, float, bool);
     void (*setFoliageLOD)(float, float);
     void (*setSceneStream)(float, bool, int);
 };
@@ -1381,6 +1382,7 @@ static bool LowGfxBind() {
     gLowGfxFns.getShadowCascades = (int (*)())(base + 0x53293C4);
     gLowGfxFns.setShadowCascades = (void (*)(int))(base + 0x53293D4);
     gLowGfxFns.setGrassShow = (void (*)(bool))(base + 0x7FDABE8);
+    gLowGfxFns.setGrassLOD = (void (*)(float, float, bool))(base + 0x9999EBC);
     gLowGfxFns.setFoliageLOD = (void (*)(float, float))(base + 0x7FDACB8);
     gLowGfxFns.setSceneStream = (void (*)(float, bool, int))(base + 0x7FDA9D0);
     gLowGfxFns.ready = true;
@@ -1413,6 +1415,7 @@ static void LowGfxRestore() {
     if (gLowGfxFns.setGlobalMaxLOD) gLowGfxFns.setGlobalMaxLOD(gLowGfx.globalMaxLOD);
     if (gLowGfxFns.setShadowCascades) gLowGfxFns.setShadowCascades(gLowGfx.shadowCascades);
     if (gLowGfxFns.setGrassShow) gLowGfxFns.setGrassShow(true);
+    if (gLowGfxFns.setGrassLOD) gLowGfxFns.setGrassLOD(0.f, 0.f, true);
     if (gLowGfxFns.setFoliageLOD) gLowGfxFns.setFoliageLOD(0.f, 0.f);
     if (gLowGfxFns.setSceneStream) gLowGfxFns.setSceneStream(0.f, true, 17);
     gLowGfx.have = false;
@@ -1529,6 +1532,7 @@ static void ApplyLowGfx() {
         if (gLowGfxFns.setGlobalMaxLOD) gLowGfxFns.setGlobalMaxLOD(brutal ? 10 : gLowGfx.globalMaxLOD);
         if (gLowGfxFns.setShadowCascades) gLowGfxFns.setShadowCascades(brutal ? 0 : gLowGfx.shadowCascades);
         if (gLowGfxFns.setGrassShow) gLowGfxFns.setGrassShow(brutal ? false : true);
+        if (gLowGfxFns.setGrassLOD) gLowGfxFns.setGrassLOD(brutal ? 50.f : 0.f, brutal ? 50.f : 0.f, brutal ? false : true);
         if (gLowGfxFns.setFoliageLOD) gLowGfxFns.setFoliageLOD(brutal ? 50.f : 0.f, brutal ? 50.f : 0.f);
         if (gLowGfxFns.setSceneStream) gLowGfxFns.setSceneStream(brutal ? -50.f : 0.f, true, 17);
         lastBrutal = brutal;
