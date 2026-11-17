@@ -1258,6 +1258,7 @@ static int LowGfxTargetTexLimit() {
     if (!checkboxStates["LOWGFX"]) return -1;
     float t = seekbarValues["LOW::GFX"] / 500.f;
     if (t < 0.02f) return 0;
+    if (t >= 0.67f) return 3; // heavy tier: reduce every texture to the minimum
     int tex = (int)(t * 3.f + 0.5f);
     if (tex < 1) tex = 1;
     if (tex > 3) tex = 3;
