@@ -554,6 +554,7 @@ if (ImGui::Begin(" ", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_No
                 ImGui::Columns(1);
                 ImGui::Spacing();
                 SLIDER("Low level", &seekbarValues["LOW::GFX"], 0.0f, 500.0f);
+                ImGui::TextDisabled("Past ~2/3: drop shadows, LOD, grass and heavy props");
                 ImGui::EndGroupPanel();
 
                 ImGui::Spacing();

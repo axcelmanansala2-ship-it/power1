@@ -1172,6 +1172,8 @@ struct LowGfxSaved {
     bool bloomBr, bloomMp, bloomPve;
     bool godBr, godPve;
     bool waterBr, waterPve;
+    int globalMaxLOD;
+    int shadowCascades;
 };
 static LowGfxSaved gLowGfx;
 
@@ -1241,6 +1243,14 @@ struct LowGfxFns {
     void (*setWaterBr)(bool);
     bool (*getWaterPve)();
     void (*setWaterPve)(bool);
+    void (*setRuntimeMaxLOD)(int);
+    int (*getGlobalMaxLOD)();
+    void (*setGlobalMaxLOD)(int);
+    int (*getShadowCascades)();
+    void (*setShadowCascades)(int);
+    void (*setGrassShow)(bool);
+    void (*setFoliageLOD)(float, float);
+    void (*setSceneStream)(float, bool, int);
 };
 static LowGfxFns gLowGfxFns;
 
@@ -1364,6 +1374,14 @@ static bool LowGfxBind() {
     gLowGfxFns.setWaterBr = (void (*)(bool))(base + 0xAFBE59C);
     gLowGfxFns.getWaterPve = (bool (*)())(base + 0xAFBE734);
     gLowGfxFns.setWaterPve = (void (*)(bool))(base + 0xAFBE790);
+    gLowGfxFns.setRuntimeMaxLOD = (void (*)(int))(base + 0x53292F8);
+    gLowGfxFns.getGlobalMaxLOD = (int (*)())(base + 0x533BD8C);
+    gLowGfxFns.setGlobalMaxLOD = (void (*)(int))(base + 0x533BD9C);
+    gLowGfxFns.getShadowCascades = (int (*)())(base + 0x53293C4);
+    gLowGfxFns.setShadowCascades = (void (*)(int))(base + 0x53293D4);
+    gLowGfxFns.setGrassShow = (void (*)(bool))(base + 0x7FDABE8);
+    gLowGfxFns.setFoliageLOD = (void (*)(float, float))(base + 0x7FDACB8);
+    gLowGfxFns.setSceneStream = (void (*)(float, bool, int))(base + 0x7FDA9D0);
     gLowGfxFns.ready = true;
     return true;
 }
@@ -1390,6 +1408,12 @@ static void LowGfxRestore() {
     gLowGfxFns.setGodPve(gLowGfx.godPve);
     gLowGfxFns.setWaterBr(gLowGfx.waterBr);
     gLowGfxFns.setWaterPve(gLowGfx.waterPve);
+    if (gLowGfxFns.setRuntimeMaxLOD) gLowGfxFns.setRuntimeMaxLOD(0);
+    if (gLowGfxFns.setGlobalMaxLOD) gLowGfxFns.setGlobalMaxLOD(gLowGfx.globalMaxLOD);
+    if (gLowGfxFns.setShadowCascades) gLowGfxFns.setShadowCascades(gLowGfx.shadowCascades);
+    if (gLowGfxFns.setGrassShow) gLowGfxFns.setGrassShow(true);
+    if (gLowGfxFns.setFoliageLOD) gLowGfxFns.setFoliageLOD(0.f, 0.f);
+    if (gLowGfxFns.setSceneStream) gLowGfxFns.setSceneStream(0.f, true, 17);
     gLowGfx.have = false;
 }
 
@@ -1432,6 +1456,8 @@ static void ApplyLowGfx() {
         gLowGfx.godPve = gLowGfxFns.getGodPve();
         gLowGfx.waterBr = gLowGfxFns.getWaterBr();
         gLowGfx.waterPve = gLowGfxFns.getWaterPve();
+        gLowGfx.globalMaxLOD = gLowGfxFns.getGlobalMaxLOD ? gLowGfxFns.getGlobalMaxLOD() : 0;
+        gLowGfx.shadowCascades = gLowGfxFns.getShadowCascades ? gLowGfxFns.getShadowCascades() : 0;
         gLowGfx.have = true;
     }
     int tex = LowGfxTargetTexLimit();
@@ -1496,6 +1522,14 @@ static void ApplyLowGfx() {
         gLowGfxFns.setShadows(brutal ? 0 : gLowGfx.shadows);
         gLowGfxFns.setShadowDist(brutal ? 0.f : gLowGfx.shadowDist);
         gLowGfxFns.setLights(brutal ? 0 : gLowGfx.lights);
+        // Heavy-object killers: force low-detail meshes, drop shadow cascades,
+        // remove grass, and stop streaming far/foliage props.
+        if (gLowGfxFns.setRuntimeMaxLOD) gLowGfxFns.setRuntimeMaxLOD(brutal ? 10 : 0);
+        if (gLowGfxFns.setGlobalMaxLOD) gLowGfxFns.setGlobalMaxLOD(brutal ? 10 : gLowGfx.globalMaxLOD);
+        if (gLowGfxFns.setShadowCascades) gLowGfxFns.setShadowCascades(brutal ? 0 : gLowGfx.shadowCascades);
+        if (gLowGfxFns.setGrassShow) gLowGfxFns.setGrassShow(brutal ? false : true);
+        if (gLowGfxFns.setFoliageLOD) gLowGfxFns.setFoliageLOD(brutal ? 50.f : 0.f, brutal ? 50.f : 0.f);
+        if (gLowGfxFns.setSceneStream) gLowGfxFns.setSceneStream(brutal ? -50.f : 0.f, true, 17);
         lastBrutal = brutal;
     }
 }
