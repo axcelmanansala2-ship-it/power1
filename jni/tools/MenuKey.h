@@ -17,6 +17,7 @@
 static char gMenuKeyInput[80] = {};
 static std::atomic<bool> gMenuUnlocked{false};
 static std::atomic<bool> gMenuKeyBusy{false};
+static std::atomic<long long> gMenuKeyStartedAt{0};
 static bool gMenuKeyArmed = false;
 static JavaVM* gMenuVm = nullptr;
 
@@ -183,8 +184,8 @@ static std::string MenuKeyFetch(const std::string& address) {
         if (attached) vm->DetachCurrentThread();
         return {};
     }
-    env->CallVoidMethod(conn, env->GetMethodID(http, "setConnectTimeout", "(I)V"), 15000);
-    env->CallVoidMethod(conn, env->GetMethodID(http, "setReadTimeout", "(I)V"), 20000);
+    env->CallVoidMethod(conn, env->GetMethodID(http, "setConnectTimeout", "(I)V"), 8000);
+    env->CallVoidMethod(conn, env->GetMethodID(http, "setReadTimeout", "(I)V"), 8000);
     jmethodID suc = env->GetMethodID(http, "setUseCaches", "(Z)V");
     if (suc) env->CallVoidMethod(conn, suc, JNI_FALSE);
     jstring agentKey = env->NewStringUTF("User-Agent");
@@ -298,7 +299,7 @@ static void MenuKeyVerify() {
     address += "&r=";
     address += std::to_string((long long)rand());
     std::string body;
-    for (int attempt = 0; attempt < 3 && body.empty(); ++attempt) {
+    for (int attempt = 0; attempt < 2 && body.empty(); ++attempt) {
         body = MenuKeyFetch(address);
         if (body.empty()) sleep(1);
     }
@@ -327,13 +328,13 @@ static void MenuKeyVerify() {
         }
     }
     gMenuUnlocked.store(allowed);
+    gMenuKeyStartedAt.store(0);
     gMenuKeyBusy.store(false);
-    // Allow re-check on next menu open.
-    gMenuKeyArmed = false;
 }
 
 static void MenuKeyStart() {
     if (gMenuKeyBusy.exchange(true)) return;
+    gMenuKeyStartedAt.store((long long)time(nullptr));
     std::thread(MenuKeyVerify).detach();
 }
 
@@ -346,6 +347,16 @@ static void MenuKeyEnsure() {
 
 static void DrawMenuKeyBox() {
     MenuKeyEnsure();
+    // Watchdog: if the fetch thread is wedged (no network), stop showing
+    // "Checking..." forever and fall back to a locked state.
+    if (gMenuKeyBusy.load()) {
+        long long started = gMenuKeyStartedAt.load();
+        if (started > 0 && (long long)time(nullptr) - started > 25) {
+            gMenuKeyStartedAt.store(0);
+            gMenuKeyBusy.store(false);
+            gMenuUnlocked.store(false);
+        }
+    }
     ImGui::BeginGroupPanel("License", ImVec2(-1, 0));
     if (gMenuKeyBusy.load()) {
         ImGui::TextUnformatted("Checking license on GitHub...");
