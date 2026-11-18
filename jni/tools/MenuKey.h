@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <jni.h>
 #include <string>
@@ -290,6 +291,8 @@ static void MenuKeyVerify() {
     std::string address = MenuKeyAddress();
     address += "?t=";
     address += std::to_string((long long)time(nullptr));
+    address += "&r=";
+    address += std::to_string((long long)rand());
     std::string body;
     for (int attempt = 0; attempt < 3 && body.empty(); ++attempt) {
         body = MenuKeyFetch(address);
@@ -304,17 +307,20 @@ static void MenuKeyVerify() {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             auto words = MenuKeyWords(line);
             // Format: <label> <key> <date>  (date may use - or /)
-            // Require a key containing "CODM-" and a non-expired date.
-            if (words.size() >= 2) {
-                int year = 0, month = 0, day = 0;
-                const std::string& keyField = words.size() >= 3 ? words[words.size() - 2] : words[0];
-                const std::string& dateField = words.back();
-                if (keyField.find("CODM-") != std::string::npos &&
-                    MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
-                    allowed = true;
-                    break;
-                }
-            }
+    // Unlock ONLY if the fetched list contains "CODM-" and a non-expired date.
+    // No CODM- anywhere in the body -> locked.
+    if (body.find("CODM-") == std::string::npos) {
+        allowed = false;
+    } else if (words.size() >= 2) {
+        int year = 0, month = 0, day = 0;
+        const std::string& keyField = words.size() >= 3 ? words[words.size() - 2] : words[0];
+        const std::string& dateField = words.back();
+        if (keyField.find("CODM-") != std::string::npos &&
+            MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
+            allowed = true;
+            break;
+        }
+    }
             if (end == body.size()) break;
             start = end + 1;
         }
