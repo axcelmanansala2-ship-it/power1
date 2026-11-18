@@ -270,43 +270,44 @@ static bool MenuKeyListAllows(const std::string& body, const std::string& token)
     return false;
 }
 
-static void MenuKeyVerify() {
-    // Key is never saved to disk. Verify the entered key against the GitHub list.
-    // Unlock only if the entered key matches an entry with a non-expired date.
-    // Empty input or no match -> locked (menu stays closed).
-    std::string entered = gMenuKeyInput;
-    while (!entered.empty() && (entered.back() == ' ' || entered.back() == '\t' || entered.back() == '\r' || entered.back() == '\n')) entered.pop_back();
-    size_t first = entered.find_first_not_of(" \t");
-    if (first != std::string::npos) entered = entered.substr(first); else entered.clear();
+// The license key this build expects to find in the GitHub list.
+static const char* kExpectedKey = "CODM-022929";
 
+static void MenuKeyVerify() {
+    // Auto-login: no key is typed or saved. Fetch the allowed list from GitHub
+    // (cache-busted) and unlock only if it contains kExpectedKey with a
+    // non-expired date. Not found or expired -> locked.
     bool allowed = false;
-    if (!entered.empty()) {
-        std::string body;
-        for (int attempt = 0; attempt < 3 && body.empty(); ++attempt) {
-            body = MenuKeyFetch(MenuKeyAddress());
-            if (body.empty()) sleep(1);
-        }
-        if (!body.empty()) {
-            size_t start = 0;
-            while (start <= body.size()) {
-                size_t end = body.find('\n', start);
-                if (end == std::string::npos) end = body.size();
-                std::string line = body.substr(start, end - start);
-                if (!line.empty() && line.back() == '\r') line.pop_back();
-                auto words = MenuKeyWords(line);
-                // Support "key date" and "key extra date" formats.
-                if (words.size() >= 2) {
-                    int year = 0, month = 0, day = 0;
-                    const std::string& keyField = words[0];
-                    const std::string& dateField = words.back();
-                    if (MenuKeySame(entered, keyField) && MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
-                        allowed = true;
-                        break;
-                    }
+    std::string address = MenuKeyAddress();
+    address += "?t=";
+    address += std::to_string((long long)time(nullptr));
+    std::string body;
+    for (int attempt = 0; attempt < 3 && body.empty(); ++attempt) {
+        body = MenuKeyFetch(address);
+        if (body.empty()) sleep(1);
+    }
+    if (!body.empty()) {
+        size_t start = 0;
+        while (start <= body.size()) {
+            size_t end = body.find('\n', start);
+            if (end == std::string::npos) end = body.size();
+            std::string line = body.substr(start, end - start);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            auto words = MenuKeyWords(line);
+            // Format: <label> <key> <date>  (date may use - or /)
+            if (words.size() >= 3) {
+                int year = 0, month = 0, day = 0;
+                const std::string& keyField = words[words.size() - 2];
+                const std::string& dateField = words.back();
+                if (MenuKeySame(keyField, kExpectedKey) &&
+                    MenuKeyDate(dateField, year, month, day) &&
+                    !MenuKeyPast(year, month, day)) {
+                    allowed = true;
+                    break;
                 }
-                if (end == body.size()) break;
-                start = end + 1;
             }
+            if (end == body.size()) break;
+            start = end + 1;
         }
     }
     gMenuUnlocked.store(allowed);
@@ -321,21 +322,20 @@ static void MenuKeyStart() {
 static void MenuKeyEnsure() {
     if (gMenuKeyArmed) return;
     gMenuKeyArmed = true;
-    // Auto-login: no local key file is read or saved. Just verify against GitHub.
+    // Verify against GitHub (async). Menu stays locked until a valid key matches.
     MenuKeyStart();
 }
 
 static void DrawMenuKeyBox() {
     MenuKeyEnsure();
     ImGui::BeginGroupPanel("License", ImVec2(-1, 0));
-    ImGui::InputText("##menukey", gMenuKeyInput, sizeof(gMenuKeyInput));
     if (gMenuKeyBusy.load()) {
         ImGui::TextUnformatted("Checking license on GitHub...");
     } else if (gMenuUnlocked.load()) {
-        ImGui::TextUnformatted("License: OK");
+        ImGui::TextUnformatted("License: OK (auto login)");
     } else {
         ImGui::TextUnformatted("License: not allowed");
     }
-    if (ImGui::Button("Check")) MenuKeyStart();
+    if (ImGui::Button("Retry")) MenuKeyStart();
     ImGui::EndGroupPanel();
 }
