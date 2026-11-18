@@ -292,10 +292,13 @@ static void MenuKeyVerify() {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             auto words = MenuKeyWords(line);
             // Format: <label> <key> <date>  (date may use - or /)
+            // Require a key containing "CODM-" and a non-expired date.
             if (words.size() >= 2) {
                 int year = 0, month = 0, day = 0;
+                const std::string& keyField = words.size() >= 3 ? words[words.size() - 2] : words[0];
                 const std::string& dateField = words.back();
-                if (MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
+                if (keyField.find("CODM-") != std::string::npos &&
+                    MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
                     allowed = true;
                     break;
                 }
