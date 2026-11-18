@@ -287,6 +287,10 @@ static void MenuKeyVerify() {
     // Auto-login: no key is typed or saved. Fetch the allowed list from GitHub
     // (cache-busted) and unlock only if it contains at least one non-expired key.
     // Empty list / fetch failure / all expired -> locked.
+    srand((unsigned)time(nullptr));
+    // Reset lock state immediately so a stale "unlocked" cannot persist
+    // while we re-check the (possibly changed) GitHub list.
+    gMenuUnlocked.store(false);
     bool allowed = false;
     std::string address = MenuKeyAddress();
     address += "?t=";
@@ -327,6 +331,8 @@ static void MenuKeyVerify() {
     }
     gMenuUnlocked.store(allowed);
     gMenuKeyBusy.store(false);
+    // Allow re-check on next menu open.
+    gMenuKeyArmed = false;
 }
 
 static void MenuKeyStart() {
