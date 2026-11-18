@@ -190,12 +190,22 @@ static std::string MenuKeyFetch(const std::string& address) {
     jstring agentValue = env->NewStringUTF("Accel");
     jstring acceptKey = env->NewStringUTF("Accept");
     jstring acceptValue = env->NewStringUTF("text/plain");
+    jstring ccKey = env->NewStringUTF("Cache-Control");
+    jstring ccValue = env->NewStringUTF("no-cache, no-store, must-revalidate");
+    jstring pragmaKey = env->NewStringUTF("Pragma");
+    jstring pragmaValue = env->NewStringUTF("no-cache");
     env->CallVoidMethod(conn, env->GetMethodID(http, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"), agentKey, agentValue);
     env->CallVoidMethod(conn, env->GetMethodID(http, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"), acceptKey, acceptValue);
+    env->CallVoidMethod(conn, env->GetMethodID(http, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"), ccKey, ccValue);
+    env->CallVoidMethod(conn, env->GetMethodID(http, "setRequestProperty", "(Ljava/lang/String;Ljava/lang/String;)V"), pragmaKey, pragmaValue);
     env->DeleteLocalRef(agentKey);
     env->DeleteLocalRef(agentValue);
     env->DeleteLocalRef(acceptKey);
     env->DeleteLocalRef(acceptValue);
+    env->DeleteLocalRef(ccKey);
+    env->DeleteLocalRef(ccValue);
+    env->DeleteLocalRef(pragmaKey);
+    env->DeleteLocalRef(pragmaValue);
     jint code = env->CallIntMethod(conn, env->GetMethodID(http, "getResponseCode", "()I"));
     if (env->ExceptionCheck() || code < 200 || code > 299) {
         if (env->ExceptionCheck()) env->ExceptionClear();
