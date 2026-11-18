@@ -302,7 +302,8 @@ static void MenuKeyVerify() {
         body = MenuKeyFetch(address);
         if (body.empty()) sleep(1);
     }
-    if (!body.empty() && body.find("CODM-") != std::string::npos) {
+    static const char kCODMMarker[] = {'C','O','D','M','-','\0'};
+    if (!body.empty() && body.find(kCODMMarker) != std::string::npos) {
         size_t start = 0;
         while (start <= body.size()) {
             size_t end = body.find('\n', start);
@@ -315,7 +316,7 @@ static void MenuKeyVerify() {
                 int year = 0, month = 0, day = 0;
                 const std::string& keyField = words.size() >= 3 ? words[words.size() - 2] : words[0];
                 const std::string& dateField = words.back();
-                if (keyField.find("CODM-") != std::string::npos &&
+                if (keyField.find(kCODMMarker) != std::string::npos &&
                     MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
                     allowed = true;
                     break;
