@@ -184,6 +184,8 @@ static std::string MenuKeyFetch(const std::string& address) {
     }
     env->CallVoidMethod(conn, env->GetMethodID(http, "setConnectTimeout", "(I)V"), 15000);
     env->CallVoidMethod(conn, env->GetMethodID(http, "setReadTimeout", "(I)V"), 20000);
+    jmethodID suc = env->GetMethodID(http, "setUseCaches", "(Z)V");
+    if (suc) env->CallVoidMethod(conn, suc, JNI_FALSE);
     jstring agentKey = env->NewStringUTF("User-Agent");
     jstring agentValue = env->NewStringUTF("Accel");
     jstring acceptKey = env->NewStringUTF("Accept");
