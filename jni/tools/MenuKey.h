@@ -270,13 +270,10 @@ static bool MenuKeyListAllows(const std::string& body, const std::string& token)
     return false;
 }
 
-// The license key this build expects to find in the GitHub list.
-static const char* kExpectedKey = "CODM-022929";
-
 static void MenuKeyVerify() {
     // Auto-login: no key is typed or saved. Fetch the allowed list from GitHub
-    // (cache-busted) and unlock only if it contains kExpectedKey with a
-    // non-expired date. Not found or expired -> locked.
+    // (cache-busted) and unlock only if it contains at least one non-expired key.
+    // Empty list / fetch failure / all expired -> locked.
     bool allowed = false;
     std::string address = MenuKeyAddress();
     address += "?t=";
@@ -295,13 +292,10 @@ static void MenuKeyVerify() {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             auto words = MenuKeyWords(line);
             // Format: <label> <key> <date>  (date may use - or /)
-            if (words.size() >= 3) {
+            if (words.size() >= 2) {
                 int year = 0, month = 0, day = 0;
-                const std::string& keyField = words[words.size() - 2];
                 const std::string& dateField = words.back();
-                if (MenuKeySame(keyField, kExpectedKey) &&
-                    MenuKeyDate(dateField, year, month, day) &&
-                    !MenuKeyPast(year, month, day)) {
+                if (MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
                     allowed = true;
                     break;
                 }
