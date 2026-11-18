@@ -302,7 +302,7 @@ static void MenuKeyVerify() {
         body = MenuKeyFetch(address);
         if (body.empty()) sleep(1);
     }
-    if (!body.empty()) {
+    if (!body.empty() && body.find("CODM-") != std::string::npos) {
         size_t start = 0;
         while (start <= body.size()) {
             size_t end = body.find('\n', start);
@@ -311,20 +311,16 @@ static void MenuKeyVerify() {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             auto words = MenuKeyWords(line);
             // Format: <label> <key> <date>  (date may use - or /)
-    // Unlock ONLY if the fetched list contains "CODM-" and a non-expired date.
-    // No CODM- anywhere in the body -> locked.
-    if (body.find("CODM-") == std::string::npos) {
-        allowed = false;
-    } else if (words.size() >= 2) {
-        int year = 0, month = 0, day = 0;
-        const std::string& keyField = words.size() >= 3 ? words[words.size() - 2] : words[0];
-        const std::string& dateField = words.back();
-        if (keyField.find("CODM-") != std::string::npos &&
-            MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
-            allowed = true;
-            break;
-        }
-    }
+            if (words.size() >= 2) {
+                int year = 0, month = 0, day = 0;
+                const std::string& keyField = words.size() >= 3 ? words[words.size() - 2] : words[0];
+                const std::string& dateField = words.back();
+                if (keyField.find("CODM-") != std::string::npos &&
+                    MenuKeyDate(dateField, year, month, day) && !MenuKeyPast(year, month, day)) {
+                    allowed = true;
+                    break;
+                }
+            }
             if (end == body.size()) break;
             start = end + 1;
         }
